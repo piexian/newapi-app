@@ -1,6 +1,6 @@
 # newapi-app 手机端（Expo）
 
-用于连接 `new-api` 后端的手机端 App，界面尽量贴近 WebUI，支持：
+用于连接 `new-api` 后端的手机端 App。
 
 - 自定义 `Base URL`
 - 仅使用 `UserId + 系统访问令牌` 登录（请求头：`New-Api-User` + `Authorization: Bearer ...`）
@@ -14,15 +14,13 @@ npm install
 npx expo start
 ```
 
-扫码后首次进入会提示填写：`Base URL`、`UserId`、`系统访问令牌`。
-
-## 打包 APK（本地）
+## 本地打包 APK（Gradle）
 
 前置：
 
-- Node.js 18+
+- Node.js 18+（推荐 Node 20 LTS）
 - JDK 17+
-- Android SDK（已配置 `ANDROID_HOME` / `ANDROID_SDK_ROOT`），以及可用的 `adb`
+- Android SDK（已配置 `ANDROID_HOME`/`ANDROID_SDK_ROOT`）
 
 步骤：
 
@@ -32,18 +30,27 @@ cd android
 ./gradlew assembleRelease
 ```
 
-产物路径：
+产物：
 
 - `android/app/build/outputs/apk/release/app-release.apk`
 
-如果只需要给测试人员快速安装，也可以构建 Debug 包：
+## Android Release 签名
+
+已生成并接入：
+
+- 密钥库：`credentials/android/newapi-app-release.keystore`
+- 签名信息（含密码）：`credentials/android/SIGNING_INFO.txt`
+- Gradle 配置文件：`android/keystore.properties`（由脚本生成）
+
+注意：签名文件和密码请妥善保管，不要提交到公开仓库。
+
+## EAS 构建（使用本地签名）
+
+本项目的 `eas.json` 已配置 `credentialsSource: local`，并已生成 `credentials.json`（含签名密码，已加入 `.gitignore`）。
+
+示例（构建 APK 便于测试安装）：
 
 ```bash
-npx expo prebuild --platform android --clean
-cd android
-./gradlew assembleDebug
+npx --yes eas-cli@latest build --platform android --profile production
 ```
 
-产物路径：
-
-- `android/app/build/outputs/apk/debug/app-debug.apk`
