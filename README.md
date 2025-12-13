@@ -1,50 +1,49 @@
-# Welcome to your Expo app 👋
+# newapi-app 手机端（Expo）
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+用于连接 `new-api` 后端的手机端 App，界面尽量贴近 WebUI，支持：
 
-## Get started
+- 自定义 `Base URL`
+- 仅使用 `UserId + 系统访问令牌` 登录（请求头：`New-Api-User` + `Authorization: Bearer ...`）
+- 首页统计、充值/兑换码、令牌管理、日志查询
+- 管理员：兑换码管理、渠道管理
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 开发运行
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+扫码后首次进入会提示填写：`Base URL`、`UserId`、`系统访问令牌`。
 
-## Learn more
+## 打包 APK（本地）
 
-To learn more about developing your project with Expo, look at the following resources:
+前置：
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- Node.js 18+
+- JDK 17+
+- Android SDK（已配置 `ANDROID_HOME` / `ANDROID_SDK_ROOT`），以及可用的 `adb`
 
-## Join the community
+步骤：
 
-Join our community of developers creating universal apps.
+```bash
+npx expo prebuild --platform android --clean
+cd android
+./gradlew assembleRelease
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+产物路径：
+
+- `android/app/build/outputs/apk/release/app-release.apk`
+
+如果只需要给测试人员快速安装，也可以构建 Debug 包：
+
+```bash
+npx expo prebuild --platform android --clean
+cd android
+./gradlew assembleDebug
+```
+
+产物路径：
+
+- `android/app/build/outputs/apk/debug/app-debug.apk`

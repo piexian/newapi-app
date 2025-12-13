@@ -5,8 +5,8 @@ import { SymbolWeight, SymbolViewProps } from 'expo-symbols';
 import { ComponentProps } from 'react';
 import { OpaqueColorValue, type StyleProp, type TextStyle } from 'react-native';
 
-type IconMapping = Record<SymbolViewProps['name'], ComponentProps<typeof MaterialIcons>['name']>;
-type IconSymbolName = keyof typeof MAPPING;
+type MaterialIconName = ComponentProps<typeof MaterialIcons>['name'];
+type IconMapping = Record<string, MaterialIconName>;
 
 /**
  * Add your SF Symbols to Material Icons mappings here.
@@ -14,6 +14,15 @@ type IconSymbolName = keyof typeof MAPPING;
  * - see SF Symbols in the [SF Symbols](https://developer.apple.com/sf-symbols/) app.
  */
 const MAPPING = {
+  // Tabs
+  'person.crop.circle.fill': 'person',
+  'creditcard.fill': 'credit-card',
+  'key.fill': 'vpn-key',
+  'doc.text.fill': 'description',
+  'gearshape.fill': 'settings',
+  'shield.fill': 'admin-panel-settings',
+
+  // Common
   'house.fill': 'home',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
@@ -31,11 +40,12 @@ export function IconSymbol({
   color,
   style,
 }: {
-  name: IconSymbolName;
+  name: SymbolViewProps['name'];
   size?: number;
   color: string | OpaqueColorValue;
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
-  return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
+  const mapped = MAPPING[name] ?? 'help-outline';
+  return <MaterialIcons color={color} size={size} name={mapped} style={style} />;
 }
