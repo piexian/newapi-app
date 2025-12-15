@@ -20,6 +20,8 @@ export function StatTile({
   iconColor?: string;
   sparkline?: number[];
 }) {
+  const len = value.length;
+  const valueSize = len > 20 ? 12 : len > 18 ? 13 : len > 16 ? 14 : len > 14 ? 15 : len > 12 ? 16 : len > 10 ? 18 : 20;
   return (
     <Surface style={styles.card}>
       <View style={styles.row}>
@@ -30,10 +32,16 @@ export function StatTile({
       </View>
       <View style={styles.bottomRow}>
         <View style={styles.left}>
-          <Text style={styles.value}>{value}</Text>
+          <Text style={[styles.value, { fontSize: valueSize }]} numberOfLines={1} ellipsizeMode="tail">
+            {value}
+          </Text>
           {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
         </View>
-        {!!sparkline?.length && <Sparkline values={sparkline} color={iconColor} />}
+        {!!sparkline?.length && (
+          <View style={styles.sparklineWrap}>
+            <Sparkline values={sparkline} color={iconColor} width={96} height={26} />
+          </View>
+        )}
       </View>
     </Surface>
   );
@@ -63,10 +71,7 @@ const styles = StyleSheet.create({
   },
   bottomRow: {
     marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
   left: {
     flex: 1,
@@ -75,11 +80,14 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#11181C',
+    includeFontPadding: false,
   },
   subtitle: {
     marginTop: 2,
     fontSize: 12,
     color: '#98A2B3',
   },
+  sparklineWrap: {
+    alignSelf: 'flex-end',
+  },
 });
-

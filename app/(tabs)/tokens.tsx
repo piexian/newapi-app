@@ -5,11 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApi } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
 import { Surface } from '@/components/ui/surface';
-import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
+import { formatDateTimeEpochSeconds, formatQuota } from '@/lib/format';
 import { parseTokens } from '@/lib/parsers';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { unwrapApiData } from '@/lib/unwrap';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { useStatus } from '@/providers/status-provider';
 
 function maskKey(key?: string) {
   if (!key) return '—';
@@ -68,6 +69,7 @@ function parseNumberOrNull(input: string): number | null {
 
 export default function TokensScreen() {
   const api = useApi();
+  const { quota } = useStatus();
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
@@ -633,7 +635,7 @@ export default function TokensScreen() {
               </Surface>
               <Surface style={styles.summaryCard}>
                 <Text style={styles.summaryLabel}>剩余额度</Text>
-                <Text style={styles.summaryValue}>{formatOmega(totalRemain)}</Text>
+                <Text style={styles.summaryValue}>{formatQuota(totalRemain, quota ?? undefined)}</Text>
               </Surface>
             </View>
             <Text style={styles.listTitle}>列表</Text>
@@ -689,7 +691,7 @@ export default function TokensScreen() {
             <View style={styles.metaRow}>
               <Text style={styles.metaKey}>剩余额度</Text>
               <Text style={styles.metaVal}>
-                {item.unlimitedQuota ? '无限制' : formatOmega(item.remainQuota)}
+                {item.unlimitedQuota ? '无限制' : formatQuota(item.remainQuota, quota ?? undefined)}
               </Text>
             </View>
             <View style={styles.metaRow}>

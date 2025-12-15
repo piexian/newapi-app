@@ -2,7 +2,6 @@ import React from 'react';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { BlurView } from 'expo-blur';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ButtonProps = {
   label: string;
@@ -44,9 +43,7 @@ export function FloatingPageControls({
   disabledNext,
   refreshLabel,
 }: FloatingPageControlsProps) {
-  const insets = useSafeAreaInsets();
-
-  const baseBottom = insets.bottom + 84;
+  const baseBottom = 12;
   const prevBottom = baseBottom + 12;
   const refreshBottom = prevBottom + 56;
   const nextBottom = baseBottom;
@@ -115,4 +112,3 @@ const styles = StyleSheet.create({
     color: '#98A2B3',
   },
 });
-

@@ -3,9 +3,10 @@ import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApi } from '@/hooks/use-api';
-import { formatCount, formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
+import { formatDateTimeEpochSeconds, formatQuota } from '@/lib/format';
 import { parseQuotaData, parseUser } from '@/lib/parsers';
 import { useAuth } from '@/providers/auth-provider';
+import { useStatus } from '@/providers/status-provider';
 import { useSettings } from '@/providers/settings-provider';
 import { Surface } from '@/components/ui/surface';
 import { StatTile } from '@/components/ui/stat-tile';
@@ -48,6 +49,7 @@ export default function DashboardScreen() {
   const api = useApi();
   const { baseUrl } = useSettings();
   const { userId } = useAuth();
+  const { quota } = useStatus();
   const insets = useSafeAreaInsets();
 
   const [busy, setBusy] = useState(false);
@@ -225,22 +227,40 @@ export default function DashboardScreen() {
         <Text style={styles.groupTitle}>账户数据</Text>
         <View style={styles.grid}>
           <View style={styles.tile}>
-            <StatTile title="当前余额" value={formatOmega(currentBalance)} subtitle="账户可用额度" icon="wallet" iconColor="#2563EB" />
+            <StatTile
+              title="当前余额"
+              value={formatQuota(currentBalance, quota ?? undefined)}
+              subtitle="账户可用额度"
+              icon="wallet"
+              iconColor="#2563EB"
+            />
           </View>
           <View style={styles.tile}>
-            <StatTile title="历史消耗" value={formatOmega(usedQuota)} subtitle="累计消耗" icon="bar-chart" iconColor="#8B5CF6" />
+            <StatTile
+              title="历史消耗"
+              value={formatQuota(usedQuota, quota ?? undefined)}
+              subtitle="累计消耗"
+              icon="bar-chart"
+              iconColor="#8B5CF6"
+            />
           </View>
         </View>
 
         <Text style={styles.groupTitle}>使用统计</Text>
         <View style={styles.grid}>
           <View style={styles.tile}>
-            <StatTile title="请求次数" value={formatCount(requestCount)} subtitle="历史累计" icon="send" iconColor="#10B981" />
+            <StatTile
+              title="请求次数"
+              value={typeof requestCount === 'number' ? String(requestCount) : '—'}
+              subtitle="历史累计"
+              icon="send"
+              iconColor="#10B981"
+            />
           </View>
           <View style={styles.tile}>
             <StatTile
               title="统计次数"
-              value={formatCount(totals.totalTimes)}
+              value={String(totals.totalTimes)}
               subtitle={`${rangeDays}天内`}
               icon="pulse"
               iconColor="#06B6D4"
@@ -254,7 +274,7 @@ export default function DashboardScreen() {
           <View style={styles.tile}>
             <StatTile
               title="统计额度"
-              value={formatOmega(totals.totalQuota)}
+              value={formatQuota(totals.totalQuota, quota ?? undefined)}
               subtitle={`${rangeDays}天内`}
               icon="logo-bitcoin"
               iconColor="#F59E0B"
@@ -264,7 +284,7 @@ export default function DashboardScreen() {
           <View style={styles.tile}>
             <StatTile
               title="统计 Tokens"
-              value={formatCount(totals.totalTokens)}
+              value={Number.isFinite(totals.totalTokens) ? totals.totalTokens.toLocaleString() : '—'}
               subtitle={`${rangeDays}天内`}
               icon="flash"
               iconColor="#EC4899"
@@ -307,7 +327,7 @@ export default function DashboardScreen() {
                 <Text style={styles.modelName} numberOfLines={1}>
                   {m.model}
                 </Text>
-                <Text style={styles.modelVal}>{formatOmega(m.quota)}</Text>
+                <Text style={styles.modelVal}>{formatQuota(m.quota, quota ?? undefined)}</Text>
               </View>
             ))
           )}

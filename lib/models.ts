@@ -9,6 +9,12 @@ export type User = {
   quota?: number;
   usedQuota?: number;
   requestCount?: number;
+  remark?: string;
+  inviterId?: number;
+  affCount?: number;
+  affQuota?: number;
+  affHistoryQuota?: number;
+  deletedAt?: string | null;
 };
 
 export type Token = {

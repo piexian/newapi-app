@@ -10,6 +10,43 @@ export function formatOmega(amount: number | null | undefined): string {
   return `${sign}Ω${abs.toFixed(2)}`;
 }
 
+export type QuotaFormatConfig = {
+  quotaPerUnit?: number;
+  quotaDisplayType?: string;
+  usdExchangeRate?: number;
+  customCurrencySymbol?: string;
+  customCurrencyExchangeRate?: number;
+};
+
+export function formatQuota(value: number | null | undefined, config?: QuotaFormatConfig, digits = 2): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—';
+
+  const quotaPerUnit = config?.quotaPerUnit;
+  const unit = typeof quotaPerUnit === 'number' && Number.isFinite(quotaPerUnit) && quotaPerUnit > 0 ? quotaPerUnit : 1;
+
+  const displayType = (config?.quotaDisplayType ?? 'USD').toUpperCase();
+  if (displayType === 'TOKENS') return formatCount(value);
+
+  const resultUSD = value / unit;
+  let symbol = '$';
+  let displayValue = resultUSD;
+
+  if (displayType === 'CNY') {
+    symbol = '￥';
+    displayValue = resultUSD * (config?.usdExchangeRate ?? 1);
+  } else if (displayType === 'CUSTOM') {
+    symbol = config?.customCurrencySymbol ?? '¤';
+    displayValue = resultUSD * (config?.customCurrencyExchangeRate ?? 1);
+  }
+
+  const fixedResult = displayValue.toFixed(digits);
+  if (parseFloat(fixedResult) === 0 && value > 0 && displayValue > 0) {
+    const minValue = Math.pow(10, -digits);
+    return symbol + minValue.toFixed(digits);
+  }
+  return symbol + fixedResult;
+}
+
 export function formatCount(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '—';
   const abs = Math.abs(value);

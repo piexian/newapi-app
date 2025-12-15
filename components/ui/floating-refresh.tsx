@@ -1,7 +1,6 @@
 import React from 'react';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export function FloatingRefreshButton({
   onPress,
@@ -12,7 +11,7 @@ export function FloatingRefreshButton({
   disabled?: boolean;
   label?: string;
 }) {
-  const insets = useSafeAreaInsets();
+  const bottom = 12;
 
   return (
     <Pressable
@@ -23,7 +22,7 @@ export function FloatingRefreshButton({
         styles.btn,
         {
           left: 16,
-          bottom: insets.bottom + 84,
+          bottom,
           opacity: disabled ? 0.6 : 1,
         },
       ]}>

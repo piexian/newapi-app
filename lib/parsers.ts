@@ -59,6 +59,21 @@ export function parseUser(body: unknown): User | null {
   const id = getNumber(data, ['id']);
   const username = getString(data, ['username']) ?? '';
   if (!id || !username) return null;
+
+  const deletedAtRaw = (data as AnyRecord).DeletedAt ?? (data as AnyRecord).deleted_at;
+  let deletedAt: string | null | undefined = undefined;
+  if (deletedAtRaw === null) {
+    deletedAt = null;
+  } else if (typeof deletedAtRaw === 'string') {
+    deletedAt = deletedAtRaw;
+  } else if (typeof deletedAtRaw === 'number') {
+    deletedAt = String(deletedAtRaw);
+  } else if (isRecord(deletedAtRaw)) {
+    const valid = getBool((deletedAtRaw as AnyRecord).Valid) ?? getBool((deletedAtRaw as AnyRecord).valid);
+    const time = getString(deletedAtRaw, ['Time']) ?? getString(deletedAtRaw, ['time']);
+    if (valid === false) deletedAt = null;
+    else if (time) deletedAt = time;
+  }
   return {
     id,
     username,
@@ -70,7 +85,59 @@ export function parseUser(body: unknown): User | null {
     quota: getNumber(data, ['quota']) ?? undefined,
     usedQuota: getNumber(data, ['used_quota']) ?? undefined,
     requestCount: getNumber(data, ['request_count']) ?? undefined,
+    remark: getString(data, ['remark']) ?? undefined,
+    inviterId: getNumber(data, ['inviter_id']) ?? undefined,
+    affCount: getNumber(data, ['aff_count']) ?? undefined,
+    affQuota: getNumber(data, ['aff_quota']) ?? undefined,
+    affHistoryQuota: getNumber(data, ['aff_history_quota']) ?? undefined,
+    deletedAt,
   };
+}
+
+export function parseUsers(body: unknown): User[] {
+  const data = unwrapApiData(body);
+  const arr = getFirstArrayCandidate(data);
+  const mapped: Array<User | null> = arr.map((it) => {
+    if (!isRecord(it)) return null;
+    const id = getNumber(it, ['id']);
+    const username = getString(it, ['username']) ?? '';
+    if (!id || !username) return null;
+
+    const deletedAtRaw = (it as AnyRecord).DeletedAt ?? (it as AnyRecord).deleted_at;
+    let deletedAt: string | null | undefined = undefined;
+    if (deletedAtRaw === null) {
+      deletedAt = null;
+    } else if (typeof deletedAtRaw === 'string') {
+      deletedAt = deletedAtRaw;
+    } else if (typeof deletedAtRaw === 'number') {
+      deletedAt = String(deletedAtRaw);
+    } else if (isRecord(deletedAtRaw)) {
+      const valid = getBool((deletedAtRaw as AnyRecord).Valid) ?? getBool((deletedAtRaw as AnyRecord).valid);
+      const time = getString(deletedAtRaw, ['Time']) ?? getString(deletedAtRaw, ['time']);
+      if (valid === false) deletedAt = null;
+      else if (time) deletedAt = time;
+    }
+
+    return {
+      id,
+      username,
+      displayName: getString(it, ['display_name']) ?? undefined,
+      email: getString(it, ['email']) ?? undefined,
+      role: getNumber(it, ['role']) ?? undefined,
+      status: getNumber(it, ['status']) ?? undefined,
+      group: getString(it, ['group']) ?? undefined,
+      quota: getNumber(it, ['quota']) ?? undefined,
+      usedQuota: getNumber(it, ['used_quota']) ?? undefined,
+      requestCount: getNumber(it, ['request_count']) ?? undefined,
+      remark: getString(it, ['remark']) ?? undefined,
+      inviterId: getNumber(it, ['inviter_id']) ?? undefined,
+      affCount: getNumber(it, ['aff_count']) ?? undefined,
+      affQuota: getNumber(it, ['aff_quota']) ?? undefined,
+      affHistoryQuota: getNumber(it, ['aff_history_quota']) ?? undefined,
+      deletedAt,
+    };
+  });
+  return mapped.filter(notNull);
 }
 
 export function parseTokens(body: unknown): Token[] {

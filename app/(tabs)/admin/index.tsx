@@ -45,6 +45,14 @@ export default function AdminHomeScreen() {
             <Text style={styles.primaryText}>进入渠道管理</Text>
           </Pressable>
         </Surface>
+
+        <Surface style={styles.card}>
+          <Text style={styles.cardTitle}>用户</Text>
+          <Text style={styles.hint}>搜索、编辑、启用/禁用、重置 2FA/Passkey、注销</Text>
+          <Pressable style={styles.primaryBtn} onPress={() => router.push('/(tabs)/admin/users')}>
+            <Text style={styles.primaryText}>进入用户管理</Text>
+          </Pressable>
+        </Surface>
       </ScrollView>
     </View>
   );

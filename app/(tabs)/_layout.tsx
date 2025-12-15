@@ -71,6 +71,7 @@ export default function TabLayout() {
       {/* Keep admin sub-pages inside Admin, but hide them from the tab bar */}
       <Tabs.Screen name="admin/redemptions" options={{ href: null }} />
       <Tabs.Screen name="admin/channels" options={{ href: null }} />
+      <Tabs.Screen name="admin/users" options={{ href: null }} />
     </Tabs>
   );
 }
