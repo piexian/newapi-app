@@ -16,35 +16,35 @@ jobs:
         id: ai
         env:
           API_BASE: ${{ secrets.PROXY_API_BASE }}
-          API_KEY:  ${{ secrets.PROXY_API_KEY }}
-          MODEL:    ${{ secrets.PROXY_MODEL }}
-          TITLE:    ${{ github.event.issue.title }}
-          BODY:     ${{ github.event.issue.body }}
+          API_KEY: ${{ secrets.PROXY_API_KEY }}
+          MODEL: ${{ secrets.PROXY_MODEL }}
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
         run: |
           set -euo pipefail
 
-          ALLOWED_LABELS='["bug","enhancement","question","documentation","chore"]'
+          ALLOWED_LABELS_JSON='["bug","enhancement","question","documentation","chore"]'
 
           PAYLOAD="$(jq -n \
             --arg model "$MODEL" \
             --arg title "$TITLE" \
             --arg body "$BODY" \
-            --argjson allowed "$ALLOWED_LABELS" \
+            --arg allowed "$ALLOWED_LABELS_JSON" \
             '{
               model: $model,
               messages: [
                 {role:"system", content:"Return only valid JSON. No markdown."},
-                {role:"user", content:(
+                {role:"user", content:
                   "你是一个 GitHub Issue 管理助手。\n" +
                   "要求：\n" +
                   "- 不管原文语言是什么，summary_zh 必须是中文，一段话\n" +
                   "- labels 只能从允许集合中选择 0~3 个\n" +
                   "- 仅输出 JSON，不要多余文本\n" +
-                  "格式：{\"summary_zh\":\"...\",\"labels\":[\"...\"]}\n\n" +
-                  "允许集合：\n" + ($allowed|tojson) + "\n\n" +
+                  "输出格式：{\"summary_zh\":\"...\",\"labels\":[\"...\"]}\n\n" +
+                  "允许集合：\n" + $allowed + "\n\n" +
                   "Issue 标题：\n" + $title + "\n\n" +
                   "Issue 正文：\n" + $body
-                )}
+                }
               ],
               temperature: 0.2
             }')"
@@ -70,7 +70,7 @@ jobs:
       - name: Apply labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO:  ${{ github.repository }}
+          GH_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           LABELS_JSON: ${{ steps.ai.outputs.labels }}
         run: |
@@ -93,8 +93,9 @@ jobs:
       - name: Comment summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO:  ${{ github.repository }}
+          GH_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SUMMARY: ${{ steps.ai.outputs.summary }}
         run: |
+          set -euo pipefail
           gh issue comment "$ISSUE_NUMBER" --body "🤖 **摘要（中文）**\n\n$SUMMARY"
