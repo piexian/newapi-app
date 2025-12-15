@@ -2,6 +2,11 @@
 
 用于连接 `new-api` 后端的手机端 App，支持自定义服务地址，并以 `UserId` + 系统访问令牌的方式调用接口。
 
+## 上游项目与说明
+
+- 本项目为 `New API` 后端的配套移动端 App，接口与功能设计基于该项目。
+- 本仓库内后端参考实现位于 `new-api`（上游项目：`https://github.com/QuantumNous/new-api`）。
+
 ## 主要功能
 
 - **登录与配置**：在登录页或设置页保存 Base URL、`New-Api-User` 与 `Authorization: Bearer ...` 令牌，支持密钥显示/隐藏与一键退出登录。
@@ -25,3 +30,8 @@
 npm install
 npx expo start
 ```
+
+## License
+
+本项目（`LoginApp`）采用 MIT License，详见 `LICENSE`。  
+上游 `New API` 后端项目使用其自身的许可证条款（请以对应仓库为准）。
