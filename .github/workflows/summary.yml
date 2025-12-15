@@ -1,4 +1,4 @@
-name: Issue AI Triage (Label + CN Summary)
+name: Issue AI Triage
 
 on:
   issues:
@@ -9,32 +9,30 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-
-    
     if: ${{ github.repository == secrets.ALLOWED_REPO }}
 
     steps:
-      - name: AI classify labels + Chinese summary
+      - name: AI classify + Chinese summary
         id: ai
         env:
-          API_BASE: ${{ secrets.PROXY_API_BASE }}   
+          API_BASE: ${{ secrets.PROXY_API_BASE }}
           API_KEY:  ${{ secrets.PROXY_API_KEY }}
-          MODEL:    ${{ secrets.PROXY_MODEL }}      
+          MODEL:    ${{ secrets.PROXY_MODEL }}
           TITLE:    ${{ github.event.issue.title }}
           BODY:     ${{ github.event.issue.body }}
         run: |
           set -euo pipefail
 
-        
           ALLOWED_LABELS='["bug","enhancement","question","documentation","chore"]'
 
           PROMPT=$(cat <<'EOF'
 你是一个 GitHub Issue 管理助手。
-任务：
-1) 不管输入是什么语言，输出的 summary_zh 必须是中文，1 段话，简洁清晰。
-2) labels 必须从允许集合中选择 0~3 个最合适的标签，不要输出集合以外的标签。
-3) 严格输出 JSON（不要 Markdown 代码块，不要多余文字），格式：
-{"summary_zh":"...","labels":["...","..."]}
+要求：
+- 不管原文语言是什么，summary_zh 必须是中文，一段话
+- labels 只能从允许集合中选择 0~3 个
+- 仅输出 JSON，不要多余文本
+格式：
+{"summary_zh":"...","labels":["..."]}
 
 允许集合：
 __ALLOWED_LABELS__
@@ -47,8 +45,6 @@ __BODY__
 EOF
           )
 
-
-          
           PROMPT="${PROMPT/__ALLOWED_LABELS__/$ALLOWED_LABELS}"
           PROMPT="${PROMPT/__TITLE__/$TITLE}"
           PROMPT="${PROMPT/__BODY__/$BODY}"
@@ -65,19 +61,9 @@ EOF
               temperature: 0.2
             }')")"
 
-          CONTENT="$(echo "$RESP" | jq -r '.choices[0].message.content // empty')"
-          if [ -z "$CONTENT" ] || [ "$CONTENT" = "null" ]; then
-            echo "AI response extraction failed (not printing raw response)."
-            exit 1
-          fi
-
-          SUMMARY="$(echo "$CONTENT" | jq -r '.summary_zh // empty')"
-          LABELS="$(echo "$CONTENT" | jq -c '.labels // []')"
-
-          if [ -z "$SUMMARY" ] || [ "$SUMMARY" = "null" ]; then
-            echo "Missing summary_zh in AI JSON."
-            exit 1
-          fi
+          CONTENT="$(echo "$RESP" | jq -r '.choices[0].message.content')"
+          SUMMARY="$(echo "$CONTENT" | jq -r '.summary_zh')"
+          LABELS="$(echo "$CONTENT" | jq -c '.labels')"
 
           {
             echo "summary<<EOF"
@@ -86,30 +72,26 @@ EOF
             echo "labels=$LABELS"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Ensure labels exist + apply labels
+      - name: Apply labels
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO:  ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           LABELS_JSON: ${{ steps.ai.outputs.labels }}
         run: |
           set -euo pipefail
-
-          
           echo "$LABELS_JSON" | jq -r '.[]' | while read -r label; do
-            [ -z "$label" ] && continue
-
-            if ! gh label list --json name --limit 200 | jq -e --arg L "$label" '.[] | select(.name==$L)' >/dev/null; then
-              gh label create "$label" --color "ededed" --description "auto-created by workflow" >/dev/null
-            fi
-
+            gh label list --json name --limit 200 \
+              | jq -e --arg L "$label" '.[] | select(.name==$L)' >/dev/null \
+              || gh label create "$label" --color ededed --description auto >/dev/null
             gh issue edit "$ISSUE_NUMBER" --add-label "$label" >/dev/null
           done
 
-      - name: Comment Chinese summary
+      - name: Comment summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO:  ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SUMMARY: ${{ steps.ai.outputs.summary }}
         run: |
-          set -euo pipefail
           gh issue comment "$ISSUE_NUMBER" --body "🤖 **摘要（中文）**\n\n$SUMMARY"
