@@ -10,6 +10,8 @@
 ## 主要功能
 
 - **登录与配置**：在登录页或设置页保存 Base URL、`New-Api-User` 与 `Authorization: Bearer ...` 令牌，支持密钥显示/隐藏与一键退出登录。
+<img width="2670" height="1699" alt="PixPin_2025-12-15_22-42-25" src="https://github.com/user-attachments/assets/a5ea73d3-73c2-4f14-af82-fe7e840d1f65" />
+
 - **首页看板**：展示账户余额、历史消耗、请求次数、近 1/7/30 天额度与 Token 统计、模型消耗分布以及账号信息，支持下拉刷新。
 - **充值/兑换**：
   - 查看充值配置、预设金额与支付方式，生成在线支付链接或使用内嵌 WebView 完成支付。
