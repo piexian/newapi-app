@@ -24,6 +24,27 @@
 - **设置**：随时调整 Base URL、用户标识与系统访问令牌，提供隐藏/显示密钥与退出登录入口。
 - **管理员入口**：管理员可进入兑换码管理（批量生成、启用/禁用、删除、清理失效）、渠道管理（查看、启用/禁用、编辑基础信息）以及用户管理（搜索、编辑、启用/禁用、重置 2FA/Passkey、注销）。
 
+界面预览
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/b1668ef6-e382-461b-b4d3-cce483aa4d8d" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/7dc744d1-8127-4198-8928-2bab652a2bad" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/23a1faec-19dd-48da-b5cc-0a2bf1613bb4" width="300"/></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/4723c777-3731-461b-9e98-62e1d9dc09aa" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/10d1f557-90ac-4492-af4c-1d3ea03879df" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/2e573478-9434-4beb-a442-a855a657fb94" width="300"/></td>
+  </tr>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/dac063fa-afd4-46bf-880f-863feda5150b" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/5dac4b00-b627-4168-9804-3aaf702d1341" width="300"/></td>
+    <td><img src="https://github.com/user-attachments/assets/866126f7-ccd0-4f87-957a-9a9e179f6106" width="300"/></td>
+  </tr>
+</table>
+
+
+
 ## 开发运行
 
 ```bash
