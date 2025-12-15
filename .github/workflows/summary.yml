@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-    if: ${{ github.repository == secrets.ALLOWED_REPO }}
+    if: ${{ github.repository == vars.ALLOWED_REPO }}
 
     steps:
       - name: AI classify + Chinese summary
@@ -25,45 +25,40 @@ jobs:
 
           ALLOWED_LABELS='["bug","enhancement","question","documentation","chore"]'
 
-          PROMPT=$(cat <<'EOF'
-你是一个 GitHub Issue 管理助手。
-要求：
-- 不管原文语言是什么，summary_zh 必须是中文，一段话
-- labels 只能从允许集合中选择 0~3 个
-- 仅输出 JSON，不要多余文本
-格式：
-{"summary_zh":"...","labels":["..."]}
-
-允许集合：
-__ALLOWED_LABELS__
-
-Issue 标题：
-__TITLE__
-
-Issue 正文：
-__BODY__
-EOF
-          )
-
-          PROMPT="${PROMPT/__ALLOWED_LABELS__/$ALLOWED_LABELS}"
-          PROMPT="${PROMPT/__TITLE__/$TITLE}"
-          PROMPT="${PROMPT/__BODY__/$BODY}"
+          PAYLOAD="$(jq -n \
+            --arg model "$MODEL" \
+            --arg title "$TITLE" \
+            --arg body "$BODY" \
+            --argjson allowed "$ALLOWED_LABELS" \
+            '{
+              model: $model,
+              messages: [
+                {role:"system", content:"Return only valid JSON. No markdown."},
+                {role:"user", content:(
+                  "你是一个 GitHub Issue 管理助手。\n" +
+                  "要求：\n" +
+                  "- 不管原文语言是什么，summary_zh 必须是中文，一段话\n" +
+                  "- labels 只能从允许集合中选择 0~3 个\n" +
+                  "- 仅输出 JSON，不要多余文本\n" +
+                  "格式：{\"summary_zh\":\"...\",\"labels\":[\"...\"]}\n\n" +
+                  "允许集合：\n" + ($allowed|tojson) + "\n\n" +
+                  "Issue 标题：\n" + $title + "\n\n" +
+                  "Issue 正文：\n" + $body
+                )}
+              ],
+              temperature: 0.2
+            }')"
 
           RESP="$(curl -sS "${API_BASE}/chat/completions" \
             -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg model "$MODEL" --arg prompt "$PROMPT" '{
-              model: $model,
-              messages: [
-                {role:"system", content:"Return only valid JSON."},
-                {role:"user", content:$prompt}
-              ],
-              temperature: 0.2
-            }')")"
+            -d "$PAYLOAD")"
 
-          CONTENT="$(echo "$RESP" | jq -r '.choices[0].message.content')"
-          SUMMARY="$(echo "$CONTENT" | jq -r '.summary_zh')"
-          LABELS="$(echo "$CONTENT" | jq -c '.labels')"
+          CONTENT="$(echo "$RESP" | jq -r '.choices[0].message.content // empty')"
+          SUMMARY="$(echo "$CONTENT" | jq -r '.summary_zh // empty')"
+          LABELS="$(echo "$CONTENT" | jq -c '.labels // []')"
+
+          [ -n "$SUMMARY" ] || exit 1
 
           {
             echo "summary<<EOF"
@@ -80,10 +75,18 @@ EOF
           LABELS_JSON: ${{ steps.ai.outputs.labels }}
         run: |
           set -euo pipefail
+
+          tmp="$(mktemp)"
+          gh label list --json name --limit 200 | jq -r '.[].name' > "$tmp"
+
           echo "$LABELS_JSON" | jq -r '.[]' | while read -r label; do
-            gh label list --json name --limit 200 \
-              | jq -e --arg L "$label" '.[] | select(.name==$L)' >/dev/null \
-              || gh label create "$label" --color ededed --description auto >/dev/null
+            [ -n "$label" ] || continue
+
+            if ! grep -Fxq "$label" "$tmp"; then
+              gh label create "$label" --color ededed --description auto >/dev/null
+              echo "$label" >> "$tmp"
+            fi
+
             gh issue edit "$ISSUE_NUMBER" --add-label "$label" >/dev/null
           done
 
