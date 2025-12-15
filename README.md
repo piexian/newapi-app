@@ -5,7 +5,7 @@
 ## 上游项目与说明
 
 - 本项目为 `New API` 后端的配套移动端 App，接口与功能设计基于该项目。
-- 本仓库内后端参考实现位于 `new-api`（上游项目：`https://github.com/QuantumNous/new-api`）。
+- 本仓库内后端参考实现位于 [new-api](https://github.com/QuantumNous/new-api)上游项目。
 
 ## 主要功能
 
