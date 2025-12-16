@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { Badge } from '@/components/ui/badge';
+import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
@@ -477,12 +478,12 @@ export default function AdminUsersScreen() {
                   autoCorrect={false}
                   style={[styles.input, styles.flex1]}
                 />
-                <TextInput
+                <DropdownSelect
+                  title="选择分组"
                   value={group}
-                  onChangeText={setGroup}
+                  onChange={setGroup}
+                  options={groupOptions}
                   placeholder="分组（可选）"
-                  autoCapitalize="none"
-                  autoCorrect={false}
                   style={[styles.input, styles.flex1]}
                 />
                 <Pressable style={styles.actionBtn} onPress={() => load(1)} disabled={busy}>
@@ -502,23 +503,6 @@ export default function AdminUsersScreen() {
                   <Text style={styles.actionText}>重置</Text>
                 </Pressable>
               </View>
-              {!!groupOptions.length && (
-                <View style={styles.quickRow}>
-                  {groupOptions.slice(0, 10).map((g) => (
-                    <Pressable
-                      key={g}
-                      style={styles.quickBtn}
-                      onPress={() => {
-                        setGroup(g);
-                        setTimeout(() => void load(1), 50);
-                      }}
-                      disabled={busy}
-                    >
-                      <Text style={styles.quickText}>{g}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              )}
               <Text style={styles.pagerInfo}>{pagerInfo}</Text>
             </Surface>
           </View>
@@ -770,24 +754,15 @@ export default function AdminUsersScreen() {
                   <Text style={styles.sectionTitle}>权限设置</Text>
                   <View style={styles.formRow}>
                     <Text style={styles.formLabel}>分组</Text>
-                    <TextInput
+                    <DropdownSelect
+                      title="选择分组"
                       value={groupInput}
-                      onChangeText={setGroupInput}
+                      onChange={setGroupInput}
+                      options={groupOptions}
                       placeholder="default"
-                      autoCapitalize="none"
-                      autoCorrect={false}
                       style={[styles.input, styles.flex1]}
                     />
                   </View>
-                  {!!groupOptions.length && (
-                    <View style={styles.quickRow}>
-                      {groupOptions.slice(0, 10).map((g) => (
-                        <Pressable key={g} style={styles.quickBtn} onPress={() => setGroupInput(g)} disabled={busy}>
-                          <Text style={styles.quickText}>{g}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
                   <View style={styles.formRow}>
                     <Text style={styles.formLabel}>剩余额度</Text>
                     <TextInput

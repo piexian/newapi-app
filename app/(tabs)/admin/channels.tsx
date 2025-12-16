@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
@@ -97,6 +98,25 @@ function normalizeCommaList(input: string): string {
   return parts.join(',');
 }
 
+function splitCommaList(input: string): string[] {
+  return input
+    .split(/[,|\n]/g)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function uniqKeepOrderStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
 function parseIntegerOrNull(input: string): number | null {
   const t = input.trim();
   if (!t) return null;
@@ -121,6 +141,7 @@ export default function ChannelsScreen() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [keyword, setKeyword] = useState('');
   const [group, setGroup] = useState('');
+  const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [modelKeyword, setModelKeyword] = useState('');
 
   const [formOpen, setFormOpen] = useState(false);
@@ -137,6 +158,11 @@ export default function ChannelsScreen() {
   const [groupInput, setGroupInput] = useState('default');
   const [baseUrlInput, setBaseUrlInput] = useState('');
   const [modelsInput, setModelsInput] = useState('');
+  const [fetchModelsBusy, setFetchModelsBusy] = useState(false);
+  const [fetchModelsError, setFetchModelsError] = useState('');
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [modelsPickerOpen, setModelsPickerOpen] = useState(false);
+  const [modelsPickerKeyword, setModelsPickerKeyword] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [priorityInput, setPriorityInput] = useState('');
   const [tagInput, setTagInput] = useState('');
@@ -201,10 +227,25 @@ export default function ChannelsScreen() {
     [api, pageSize, query.g, query.kw, query.mk, query.status]
   );
 
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await api.request({ path: '/api/group/' });
+      const err = getApiError(res.body);
+      if (err) return;
+      const data = unwrapApiData(res.body) as unknown;
+      if (Array.isArray(data)) {
+        setGroupOptions(data.filter((g): g is string => typeof g === 'string' && g.trim().length > 0));
+      }
+    } catch {
+      // ignore
+    }
+  }, [api]);
+
   useEffect(() => {
     if (!isAdmin) return;
     void load(1);
-  }, [isAdmin, load]);
+    void fetchGroups();
+  }, [fetchGroups, isAdmin, load]);
 
   const pagerInfo = useMemo(() => {
     if (!total) return `第 ${page} 页`;
@@ -242,12 +283,22 @@ export default function ChannelsScreen() {
     setModelMappingInput('');
     setParamOverrideInput('');
     setHeaderOverrideInput('');
+    setFetchModelsBusy(false);
+    setFetchModelsError('');
+    setFetchedModels([]);
+    setModelsPickerOpen(false);
+    setModelsPickerKeyword('');
     setFormOpen(true);
   }, []);
 
   const openEdit = useCallback(
     async (id: number) => {
       setError('');
+      setFetchModelsBusy(false);
+      setFetchModelsError('');
+      setFetchedModels([]);
+      setModelsPickerOpen(false);
+      setModelsPickerKeyword('');
       setBusy(true);
       try {
         const row = items.find((it) => it.id === id);
@@ -335,6 +386,70 @@ export default function ChannelsScreen() {
     },
     [api, items]
   );
+
+  const selectedModels = useMemo(() => new Set(splitCommaList(modelsInput)), [modelsInput]);
+
+  const filteredFetchedModels = useMemo(() => {
+    const q = modelsPickerKeyword.trim().toLowerCase();
+    if (!q) return fetchedModels;
+    return fetchedModels.filter((m) => m.toLowerCase().includes(q));
+  }, [fetchedModels, modelsPickerKeyword]);
+
+  const toggleModelInModelsInput = useCallback(
+    (modelName: string) => {
+      const current = uniqKeepOrderStrings(splitCommaList(modelsInput));
+      const exists = current.includes(modelName);
+      const next = exists ? current.filter((m) => m !== modelName) : [...current, modelName];
+      setModelsInput(next.join(','));
+    },
+    [modelsInput]
+  );
+
+  const fetchUpstreamModels = useCallback(async () => {
+    setFetchModelsError('');
+    setFetchModelsBusy(true);
+    try {
+      let res: { ok: boolean; status: number; body: unknown };
+      if (editingId !== null) {
+        res = await api.request({ path: `/api/channel/fetch_models/${editingId}` });
+      } else {
+        const type = parseIntegerOrNull(typeInput) ?? 0;
+        const key = keyInput.trim();
+        if (!key) {
+          setFetchModelsError('请先填写 Key');
+          return;
+        }
+        res = await api.request({
+          path: '/api/channel/fetch_models',
+          method: 'POST',
+          body: { base_url: baseUrlInput.trim(), type, key },
+        });
+      }
+
+      const err = getApiError(res.body);
+      if (err) {
+        setFetchModelsError(err);
+        return;
+      }
+
+      const data = unwrapApiData(res.body) as unknown;
+      if (!Array.isArray(data)) {
+        setFetchModelsError('获取模型失败：数据格式错误');
+        return;
+      }
+
+      const models = data
+        .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
+        .map((m) => m.trim());
+      setFetchedModels(uniqKeepOrderStrings(models));
+      setModelsPickerKeyword('');
+      setModelsPickerOpen(true);
+    } catch (e) {
+      setFetchModelsError(e instanceof Error ? e.message : '获取模型失败');
+    } finally {
+      setFetchModelsBusy(false);
+    }
+  }, [api, baseUrlInput, editingId, keyInput, typeInput]);
 
   const save = useCallback(async () => {
     setError('');
@@ -784,12 +899,12 @@ export default function ChannelsScreen() {
               </View>
               <View style={styles.formRow}>
                 <Text style={styles.formLabel}>分组</Text>
-                <TextInput
+                <DropdownSelect
+                  title="选择分组"
                   value={group}
-                  onChangeText={setGroup}
+                  onChange={setGroup}
+                  options={groupOptions}
                   placeholder="例如 default"
-                  autoCapitalize="none"
-                  autoCorrect={false}
                   style={[styles.input, styles.flex1]}
                 />
               </View>
@@ -929,6 +1044,7 @@ export default function ChannelsScreen() {
         animationType="slide"
         onRequestClose={() => {
           setFormOpen(false);
+          setModelsPickerOpen(false);
         }}
       >
         <View style={[styles.modalOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
@@ -936,7 +1052,14 @@ export default function ChannelsScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{editingId ? `编辑 Channel #${editingId}` : '新增渠道'}</Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable style={styles.modalBtn} onPress={() => setFormOpen(false)} disabled={busy}>
+                <Pressable
+                  style={styles.modalBtn}
+                  onPress={() => {
+                    setFormOpen(false);
+                    setModelsPickerOpen(false);
+                  }}
+                  disabled={busy}
+                >
                   <Text style={styles.modalBtnText}>关闭</Text>
                 </Pressable>
                 <Pressable style={[styles.modalBtn, styles.primaryBtn]} onPress={save} disabled={busy}>
@@ -985,12 +1108,13 @@ export default function ChannelsScreen() {
 
               <View style={styles.formRow}>
                 <Text style={styles.formLabel}>分组</Text>
-                <TextInput
+                <DropdownSelect
+                  title="选择分组（可多选）"
+                  multiple
                   value={groupInput}
-                  onChangeText={setGroupInput}
+                  onChange={setGroupInput}
+                  options={groupOptions}
                   placeholder="default"
-                  autoCapitalize="none"
-                  autoCorrect={false}
                   style={[styles.input, styles.flex1]}
                 />
               </View>
@@ -1076,6 +1200,17 @@ export default function ChannelsScreen() {
                   style={[styles.input, styles.flex1, styles.textArea]}
                 />
               </View>
+              <View style={styles.inlineRow}>
+                <Pressable
+                  style={[styles.actionBtn, styles.primaryBtn]}
+                  onPress={fetchUpstreamModels}
+                  disabled={busy || fetchModelsBusy}
+                >
+                  <Text style={[styles.actionText, styles.primaryText]}>{fetchModelsBusy ? '获取中…' : '获取模型'}</Text>
+                </Pressable>
+                {!!fetchedModels.length && <Text style={styles.hint}>{`已获取 ${fetchedModels.length} 个`}</Text>}
+              </View>
+              {!!fetchModelsError && <Text style={styles.errorText}>{fetchModelsError}</Text>}
               <View style={styles.formRow}>
                 <Text style={styles.formLabel}>Weight</Text>
                 <TextInput
@@ -1185,6 +1320,55 @@ export default function ChannelsScreen() {
                 />
               </View>
             </ScrollView>
+          </Surface>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        visible={modelsPickerOpen}
+        animationType="slide"
+        onRequestClose={() => setModelsPickerOpen(false)}
+      >
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+          <Surface style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>选择模型</Text>
+              <View style={styles.modalHeaderActions}>
+                <Pressable style={styles.modalBtn} onPress={() => setModelsPickerOpen(false)}>
+                  <Text style={styles.modalBtnText}>关闭</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <TextInput
+              value={modelsPickerKeyword}
+              onChangeText={setModelsPickerKeyword}
+              placeholder="搜索模型"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={styles.input}
+            />
+
+            <FlatList
+              data={filteredFetchedModels}
+              keyExtractor={(it) => it}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={<Text style={styles.empty}>暂无模型</Text>}
+              renderItem={({ item }) => {
+                const active = selectedModels.has(item);
+                return (
+                  <Pressable style={styles.modelRow} onPress={() => toggleModelInModelsInput(item)}>
+                    <Text style={styles.modelText} numberOfLines={1}>
+                      {item}
+                    </Text>
+                    <Text style={[styles.modelCheck, active ? styles.modelCheckOn : styles.modelCheckOff]}>
+                      {active ? '✓' : ''}
+                    </Text>
+                  </Pressable>
+                );
+              }}
+            />
           </Surface>
         </View>
       </Modal>
@@ -1307,6 +1491,19 @@ const styles = StyleSheet.create({
   },
   modalBtnText: { fontWeight: '900', color: '#11181C' },
   modalBody: { paddingBottom: 12, gap: 10 },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.06)',
+  },
+  modelText: { flex: 1, color: '#11181C', fontSize: 12, fontWeight: '800' },
+  modelCheck: { width: 22, textAlign: 'center', fontWeight: '900' },
+  modelCheckOn: { color: '#11181C' },
+  modelCheckOff: { color: 'transparent' },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.08)' },
   sectionTitle: { fontSize: 12, fontWeight: '900', color: '#11181C' },
 });

@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { unwrapApiData } from '@/lib/unwrap';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { useStatus } from '@/providers/status-provider';
+import { DropdownSelect } from '@/components/ui/dropdown-select';
 
 function maskKey(key?: string) {
   if (!key) return '—';
@@ -88,6 +89,7 @@ export default function TokensScreen() {
   const [remainQuotaInput, setRemainQuotaInput] = useState('');
   const [unlimitedQuota, setUnlimitedQuota] = useState(false);
   const [tokenGroupInput, setTokenGroupInput] = useState('');
+  const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [modelLimitInput, setModelLimitInput] = useState('');
   const [ipWhitelistInput, setIpWhitelistInput] = useState('');
   const [extraJson, setExtraJson] = useState('{\n  \"cross_group_retry\": false\n}\n');
@@ -125,6 +127,20 @@ export default function TokensScreen() {
     },
     [api, pageSize]
   );
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await api.request({ path: '/api/user/self/groups' });
+      const env = getApiEnvelope(res.body);
+      if (env && env.success === false) return;
+      const data = unwrapApiData(res.body) as unknown;
+      if (isRecord(data)) {
+        setGroupOptions(Object.keys(data).filter((g) => typeof g === 'string' && g.trim().length > 0));
+      }
+    } catch {
+      // ignore
+    }
+  }, [api]);
 
   const maxPage = useMemo(() => {
     if (!total) return page;
@@ -454,7 +470,8 @@ export default function TokensScreen() {
 
   useEffect(() => {
     void load(1);
-  }, [load]);
+    void fetchGroups();
+  }, [fetchGroups, load]);
 
   return (
     <View style={styles.screen}>
@@ -508,13 +525,15 @@ export default function TokensScreen() {
                 </View>
                 <View style={styles.formRow}>
                   <Text style={styles.formLabel}>令牌分组</Text>
-                  <TextInput
+                  <DropdownSelect
+                    title="选择分组"
                     value={tokenGroupInput}
-                    onChangeText={setTokenGroupInput}
-                    placeholder="例如：VIP 通道"
-                    autoCapitalize="none"
-                    autoCorrect={false}
+                    onChange={setTokenGroupInput}
+                    options={groupOptions}
+                    placeholder="例如：default"
+                    placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
                     style={[inputStyle, styles.formInput]}
+                    textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#11181C' }}
                   />
                 </View>
                 <View style={styles.formRow}>

@@ -4,12 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatCount, formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseLogs, parseLogStat } from '@/lib/parsers';
+import { unwrapApiData } from '@/lib/unwrap';
+import { useMe } from '@/providers/me-provider';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -59,6 +62,7 @@ export default function LogsScreen() {
   const api = useApi();
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
+  const { isAdmin } = useMe();
 
   const [busy, setBusy] = useState(false);
   const [stat, setStat] = useState<Record<string, number>>({});
@@ -71,6 +75,7 @@ export default function LogsScreen() {
   const [tokenName, setTokenName] = useState('');
   const [modelName, setModelName] = useState('');
   const [group, setGroup] = useState('');
+  const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [startTs, setStartTs] = useState(String(todayStartSeconds()));
   const [endTs, setEndTs] = useState(String(nowSeconds()));
 
@@ -104,10 +109,12 @@ export default function LogsScreen() {
       setError('');
       setBusy(true);
       try {
+        const statPath = isAdmin ? '/api/log/stat' : '/api/log/self/stat';
+        const logsPath = isAdmin ? '/api/log/' : '/api/log/self';
         const [statRes, logsRes] = await Promise.all([
-          api.request({ path: '/api/log/self/stat', query: queryParams }),
+          api.request({ path: statPath, query: queryParams }),
           api.request({
-            path: '/api/log/self',
+            path: logsPath,
             query: { ...queryParams, p: nextPage, page_size: pageSize },
           }),
         ]);
@@ -139,7 +146,7 @@ export default function LogsScreen() {
         setBusy(false);
       }
     },
-    [api, pageSize, queryParams]
+    [api, isAdmin, pageSize, queryParams]
   );
 
   const applyToday = useCallback(() => {
@@ -166,6 +173,28 @@ export default function LogsScreen() {
     void load(1);
   }, [load]);
 
+  const fetchGroups = useCallback(async () => {
+    try {
+      const res = await api.request({ path: isAdmin ? '/api/group/' : '/api/user/self/groups' });
+      const env = res.body as unknown;
+      if (isRecord(env) && typeof env.success === 'boolean' && env.success === false) return;
+      const data = unwrapApiData(res.body) as unknown;
+      if (Array.isArray(data)) {
+        setGroupOptions(data.filter((g): g is string => typeof g === 'string' && g.trim().length > 0));
+        return;
+      }
+      if (isRecord(data)) {
+        setGroupOptions(Object.keys(data).filter((g) => typeof g === 'string' && g.trim().length > 0));
+      }
+    } catch {
+      // ignore
+    }
+  }, [api, isAdmin]);
+
+  useEffect(() => {
+    void fetchGroups();
+  }, [fetchGroups]);
+
   return (
     <View style={styles.screen}>
       <Modal transparent visible={detailsOpen} animationType="fade" onRequestClose={() => setDetailsOpen(false)}>
@@ -180,6 +209,8 @@ export default function LogsScreen() {
                     const content = [
                       `时间：${formatDateTimeEpochSeconds(detailsLog?.createdAt)}`,
                       `类型：${logTypeLabel(detailsLog?.type)}`,
+                      detailsLog?.username ? `用户：${detailsLog.username}` : '',
+                      detailsLog?.channel !== undefined ? `渠道：${detailsLog.channel}` : '',
                       detailsLog?.modelName ? `模型：${detailsLog.modelName}` : '',
                       detailsLog?.tokenName ? `令牌：${detailsLog.tokenName}` : '',
                       detailsLog?.group ? `分组：${detailsLog.group}` : '',
@@ -219,6 +250,18 @@ export default function LogsScreen() {
                 <Text style={styles.k}>类型</Text>
                 <Text style={styles.v}>{logTypeLabel(detailsLog?.type)}</Text>
               </View>
+              {!!detailsLog?.username && (
+                <View style={styles.kvRow}>
+                  <Text style={styles.k}>用户</Text>
+                  <Text style={styles.v}>{detailsLog.username}</Text>
+                </View>
+              )}
+              {detailsLog?.channel !== undefined && (
+                <View style={styles.kvRow}>
+                  <Text style={styles.k}>渠道</Text>
+                  <Text style={styles.v}>{detailsLog.channel}</Text>
+                </View>
+              )}
               {!!detailsLog?.modelName && (
                 <View style={styles.kvRow}>
                   <Text style={styles.k}>模型</Text>
@@ -331,14 +374,15 @@ export default function LogsScreen() {
                 autoCorrect={false}
                 style={inputStyle}
               />
-              <TextInput
+              <DropdownSelect
+                title="选择分组"
                 value={group}
-                onChangeText={setGroup}
-                placeholder="分组 group（可选）"
+                onChange={setGroup}
+                options={groupOptions}
+                placeholder="分组（可选）"
                 placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
-                autoCapitalize="none"
-                autoCorrect={false}
                 style={inputStyle}
+                textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#11181C' }}
               />
 
               <View style={styles.timeRow}>
@@ -438,6 +482,12 @@ export default function LogsScreen() {
         }
         renderItem={({ item }) => {
           const totalTokens = (item.promptTokens ?? 0) + (item.completionTokens ?? 0);
+          const meta = [
+            item.username ? `用户：${item.username}` : null,
+            item.channel !== undefined ? `渠道：${item.channel}` : null,
+          ]
+            .filter((s): s is string => !!s)
+            .join(' · ');
           return (
             <Pressable
               onPress={() => {
@@ -453,6 +503,11 @@ export default function LogsScreen() {
                 {!!(item.modelName || item.tokenName) && (
                   <Text style={styles.title2} numberOfLines={1}>
                     {(item.modelName ? `${item.modelName}` : '—') + (item.tokenName ? ` · ${item.tokenName}` : '')}
+                  </Text>
+                )}
+                {!!meta && (
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {meta}
                   </Text>
                 )}
                 <View style={styles.kvInline}>
@@ -617,6 +672,11 @@ const styles = StyleSheet.create({
     color: '#11181C',
     fontSize: 13,
     lineHeight: 18,
+  },
+  meta: {
+    color: '#667085',
+    fontSize: 12,
+    marginTop: 2,
   },
   empty: {
     paddingTop: 16,
