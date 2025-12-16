@@ -56,5 +56,5 @@ npx expo start
 
 ## License
 
-本项目（`LoginApp`）采用 MIT License，详见 `LICENSE`。  
+本项目（`newapi-app`）采用 MIT License，详见 `LICENSE`。  
 上游 `New API` 后端项目使用其自身的许可证条款（请以对应仓库为准）。
