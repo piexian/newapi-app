@@ -77,17 +77,17 @@ jobs:
           set -euo pipefail
 
           tmp="$(mktemp)"
-          gh label list --json name --limit 200 | jq -r '.[].name' > "$tmp"
+          gh label list --repo "$GH_REPO" --json name --limit 200 | jq -r '.[].name' > "$tmp"
 
           echo "$LABELS_JSON" | jq -r '.[]' | while read -r label; do
             [ -n "$label" ] || continue
 
             if ! grep -Fxq "$label" "$tmp"; then
-              gh label create "$label" --color ededed --description auto >/dev/null
+              gh label create "$label" --repo "$GH_REPO" --color ededed --description auto >/dev/null
               echo "$label" >> "$tmp"
             fi
 
-            gh issue edit "$ISSUE_NUMBER" --add-label "$label" >/dev/null
+            gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label "$label" >/dev/null
           done
 
       - name: Comment summary
@@ -97,4 +97,4 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SUMMARY: ${{ steps.ai.outputs.summary }}
         run: |
-          gh issue comment "$ISSUE_NUMBER" --body "🤖 **摘要（中文）**\n\n$SUMMARY"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "🤖 **摘要（中文）**\n\n$SUMMARY"
