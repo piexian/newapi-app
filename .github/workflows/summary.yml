@@ -26,15 +26,15 @@ jobs:
           ALLOWED_LABELS_JSON='["bug","enhancement","question","documentation","chore"]'
 
           PROMPT="$(printf '%s\n\n%s\n%s\n\n%s\n%s\n\n%s\n%s\n' \
-'你是一个 GitHub Issue 管理助手。
-要求：
-- 不管原文语言是什么，summary_zh 必须是中文，一段话
-- labels 只能从允许集合中选择 0~3 个
-- 仅输出 JSON，不要多余文本
-输出格式：{"summary_zh":"...","labels":["..."]}' \
-"允许集合：" "$ALLOWED_LABELS_JSON" \
-"Issue 标题：" "$TITLE" \
-"Issue 正文：" "$BODY")"
+          '你是一个 GitHub Issue 管理助手。
+          要求：
+          - 不管原文语言是什么，summary_zh 必须是中文，一段话
+          - labels 只能从允许集合中选择 0~3 个
+          - 仅输出 JSON，不要多余文本
+          输出格式：{"summary_zh":"...","labels":["..."]}' \
+          "允许集合：" "$ALLOWED_LABELS_JSON" \
+          "Issue 标题：" "$TITLE" \
+          "Issue 正文：" "$BODY")"
 
           PAYLOAD="$(jq -n \
             --arg model "$MODEL" \
