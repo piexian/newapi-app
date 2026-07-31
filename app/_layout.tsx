@@ -8,6 +8,30 @@ import { AppProviders } from '@/providers/app-providers';
 import { useAuth } from '@/providers/auth-provider';
 import { useSettings } from '@/providers/settings-provider';
 import React, { useEffect } from 'react';
+import { Palette } from '@/constants/theme';
+
+const AppLightTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: Palette.accent,
+    background: Palette.canvas,
+    card: Palette.surface,
+    text: Palette.ink,
+    border: Palette.border,
+  },
+};
+
+const AppDarkTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: '#71C7B5',
+    background: '#101916',
+    card: '#17231F',
+    border: '#2E403A',
+  },
+};
 
 function AuthGate() {
   const segments = useSegments();
@@ -37,7 +61,7 @@ export default function RootLayout() {
 
   return (
     <AppProviders>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={colorScheme === 'dark' ? AppDarkTheme : AppLightTheme}>
         <AuthGate />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

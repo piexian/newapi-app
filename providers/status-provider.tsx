@@ -57,36 +57,39 @@ export function StatusProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const res = await api.request({ path: '/api/status' });
-    const body = res.body as unknown;
-    if (isRecord(body) && body.success === false) {
+    try {
+      const res = await api.request({ path: '/api/status' });
+      const body = res.body as unknown;
+      if (isRecord(body) && body.success === false) {
+        setQuota(null);
+        return;
+      }
+
+      const data = unwrapApiData(body) as unknown;
+      if (!isRecord(data)) {
+        setQuota(null);
+        return;
+      }
+
+      const quotaPerUnit = safeNumber(data.quota_per_unit) ?? 500000;
+      const quotaDisplayTypeRaw = (safeString(data.quota_display_type) ?? 'USD').toUpperCase();
+      const quotaDisplayType: QuotaDisplayType =
+        quotaDisplayTypeRaw === 'TOKENS' || quotaDisplayTypeRaw === 'CNY' || quotaDisplayTypeRaw === 'CUSTOM'
+          ? (quotaDisplayTypeRaw as QuotaDisplayType)
+          : 'USD';
+
+      setQuota({
+        quotaPerUnit: quotaPerUnit > 0 ? quotaPerUnit : 500000,
+        quotaDisplayType,
+        usdExchangeRate: safeNumber(data.usd_exchange_rate) ?? 1,
+        customCurrencySymbol: safeString(data.custom_currency_symbol) ?? '¤',
+        customCurrencyExchangeRate: safeNumber(data.custom_currency_exchange_rate) ?? 1,
+      });
+    } catch {
       setQuota(null);
+    } finally {
       setIsLoaded(true);
-      return;
     }
-
-    const data = unwrapApiData(body) as unknown;
-    if (!isRecord(data)) {
-      setQuota(null);
-      setIsLoaded(true);
-      return;
-    }
-
-    const quotaPerUnit = safeNumber(data.quota_per_unit) ?? 500000;
-    const quotaDisplayTypeRaw = (safeString(data.quota_display_type) ?? 'USD').toUpperCase();
-    const quotaDisplayType: QuotaDisplayType =
-      quotaDisplayTypeRaw === 'TOKENS' || quotaDisplayTypeRaw === 'CNY' || quotaDisplayTypeRaw === 'CUSTOM'
-        ? (quotaDisplayTypeRaw as QuotaDisplayType)
-        : 'USD';
-
-    setQuota({
-      quotaPerUnit: quotaPerUnit > 0 ? quotaPerUnit : 500000,
-      quotaDisplayType,
-      usdExchangeRate: safeNumber(data.usd_exchange_rate) ?? 1,
-      customCurrencySymbol: safeString(data.custom_currency_symbol) ?? '¤',
-      customCurrencyExchangeRate: safeNumber(data.custom_currency_exchange_rate) ?? 1,
-    });
-    setIsLoaded(true);
   }, [api, baseUrl]);
 
   useEffect(() => {

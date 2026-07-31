@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
+import { AppButton } from '@/components/ui/app-button';
 import { Surface } from '@/components/ui/surface';
+import { Palette, Radius } from '@/constants/theme';
 
 function splitCommaList(value: string): string[] {
   return value
@@ -75,7 +78,9 @@ export function DropdownSelect({
   return (
     <>
       <Pressable
-        style={[styles.field, style]}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}，当前值：${displayValue || placeholder}`}
+        style={({ pressed }) => [styles.field, pressed ? styles.fieldPressed : null, style]}
         onPress={() => {
           setQuery('');
           setOpen(true);
@@ -92,40 +97,46 @@ export function DropdownSelect({
         >
           {displayValue || placeholder}
         </Text>
-        <Text style={[styles.chevron, { color: placeholderTextColor }]} accessibilityElementsHidden>
-          ▾
-        </Text>
+        <MaterialIcons name="unfold-more" size={19} color={placeholderTextColor} />
       </Pressable>
 
       <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={styles.backdrop}>
-          <Surface style={styles.modalCard}>
+          <Surface style={styles.modalCard} accessibilityViewIsModal>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{title}</Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable
-                  style={[styles.modalBtn, styles.modalBtnGhost]}
+                <AppButton
+                  label="清空"
+                  icon="backspace"
+                  variant="quiet"
+                  compact
                   onPress={() => {
                     onChange('');
                     setOpen(false);
                   }}
-                >
-                  <Text style={[styles.modalBtnText, styles.modalBtnTextGhost]}>清空</Text>
-                </Pressable>
-                <Pressable style={styles.modalBtn} onPress={() => setOpen(false)}>
-                  <Text style={styles.modalBtnText}>{multiple ? '完成' : '关闭'}</Text>
-                </Pressable>
+                />
+                <AppButton
+                  label={multiple ? '完成' : '关闭'}
+                  icon={multiple ? 'check' : 'close'}
+                  compact
+                  onPress={() => setOpen(false)}
+                />
               </View>
             </View>
 
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="搜索…"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.search}
-            />
+            <View style={styles.searchShell}>
+              <MaterialIcons name="search" size={19} color={Palette.muted} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="搜索选项"
+                placeholderTextColor={Palette.subtle}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.search}
+              />
+            </View>
 
             <FlatList
               data={filteredOptions}
@@ -136,7 +147,13 @@ export function DropdownSelect({
                 const active = selected.has(item);
                 return (
                   <Pressable
-                    style={styles.optionRow}
+                    accessibilityRole={multiple ? 'checkbox' : 'radio'}
+                    accessibilityState={{ checked: active }}
+                    style={({ pressed }) => [
+                      styles.optionRow,
+                      active ? styles.optionRowActive : null,
+                      pressed ? styles.optionRowPressed : null,
+                    ]}
                     onPress={() => {
                       if (!multiple) {
                         onChange(item);
@@ -156,9 +173,9 @@ export function DropdownSelect({
                     <Text style={styles.optionText} numberOfLines={1}>
                       {item}
                     </Text>
-                    <Text style={[styles.check, active ? styles.checkActive : styles.checkIdle]}>
-                      {active ? '✓' : ''}
-                    </Text>
+                    <View style={[styles.check, active ? styles.checkActive : styles.checkIdle]}>
+                      {active && <MaterialIcons name="check" size={15} color="#FFFFFF" />}
+                    </View>
                   </Pressable>
                 );
               }}
@@ -172,23 +189,28 @@ export function DropdownSelect({
 
 const styles = StyleSheet.create({
   field: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: Radius.medium,
+    borderWidth: 1,
+    borderColor: Palette.borderStrong,
+    backgroundColor: Palette.surface,
+  },
+  fieldPressed: {
+    backgroundColor: Palette.surfaceMuted,
   },
   fieldText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: '#11181C',
-  },
-  chevron: {
-    fontSize: 14,
-    fontWeight: '900',
+    color: Palette.ink,
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(15, 27, 24, 0.48)',
     padding: 16,
     justifyContent: 'center',
   },
@@ -196,6 +218,9 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 10,
     maxHeight: '80%',
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -206,66 +231,70 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#11181C',
+    color: Palette.ink,
   },
   modalHeaderActions: {
     flexDirection: 'row',
     gap: 8,
   },
-  modalBtn: {
+  searchShell: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Palette.borderStrong,
+    backgroundColor: Palette.surface,
+    borderRadius: Radius.medium,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#11181C',
-  },
-  modalBtnGhost: {
-    backgroundColor: '#EEF2FF',
-  },
-  modalBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#fff',
-  },
-  modalBtnTextGhost: {
-    color: '#11181C',
   },
   search: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    flex: 1,
     paddingVertical: 10,
-    color: '#11181C',
+    color: Palette.ink,
   },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    minHeight: 46,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: Radius.small,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
+    borderBottomColor: Palette.border,
+  },
+  optionRowActive: {
+    backgroundColor: Palette.accentSoft,
+  },
+  optionRowPressed: {
+    opacity: 0.72,
   },
   optionText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: '#11181C',
+    color: Palette.ink,
   },
   check: {
     width: 22,
-    textAlign: 'center',
-    fontWeight: '900',
+    height: 22,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   checkActive: {
-    color: '#11181C',
+    backgroundColor: Palette.accent,
+    borderColor: Palette.accent,
   },
   checkIdle: {
-    color: 'transparent',
+    backgroundColor: Palette.surface,
+    borderColor: Palette.borderStrong,
   },
   empty: {
     textAlign: 'center',
-    color: '#667085',
+    color: Palette.muted,
     paddingVertical: 10,
     fontWeight: '700',
   },

@@ -4,12 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApi } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { Surface } from '@/components/ui/surface';
 import { formatDateTimeEpochSeconds, formatQuota } from '@/lib/format';
 import { parseTokens } from '@/lib/parsers';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { unwrapApiData } from '@/lib/unwrap';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { useStatus } from '@/providers/status-provider';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 
@@ -488,16 +491,10 @@ export default function TokensScreen() {
             <View style={styles.titleRow}>
               <Text style={styles.title}>令牌</Text>
               <View style={styles.headerActions}>
-                <Pressable style={styles.actionBtn} onPress={openCreate} disabled={busy}>
-                  <Text style={styles.actionText}>新增</Text>
-                </Pressable>
+                <AppButton label="新增令牌" icon="add" compact onPress={openCreate} disabled={busy} />
               </View>
             </View>
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
             {formOpen && (
               <Surface style={styles.formCard}>
                 <Text style={styles.formTitle}>{editingId ? `编辑 Token #${editingId}` : '新增令牌'}</Text>
@@ -531,9 +528,9 @@ export default function TokensScreen() {
                     onChange={setTokenGroupInput}
                     options={groupOptions}
                     placeholder="例如：default"
-                    placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
+                    placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
                     style={[inputStyle, styles.formInput]}
-                    textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#11181C' }}
+                    textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#15211F' }}
                   />
                 </View>
                 <View style={styles.formRow}>
@@ -632,18 +629,14 @@ export default function TokensScreen() {
                   textAlignVertical="top"
                 />
                 <View style={styles.formActions}>
-                  <Pressable
-                    style={[styles.actionBtn, styles.primaryBtn]}
-                    onPress={saveToken}
-                    disabled={busy}>
-                    <Text style={[styles.actionText, styles.primaryText]}>{busy ? '保存中…' : '保存'}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.actionBtn, styles.secondaryBtn]}
+                  <AppButton label="保存令牌" icon="save" loading={busy} onPress={saveToken} />
+                  <AppButton
+                    label="取消"
+                    icon="close"
+                    variant="secondary"
                     onPress={() => setFormOpen(false)}
-                    disabled={busy}>
-                    <Text style={styles.actionText}>取消</Text>
-                  </Pressable>
+                    disabled={busy}
+                  />
                 </View>
               </Surface>
             )}
@@ -688,20 +681,30 @@ export default function TokensScreen() {
               />
             </View>
             <View style={styles.opsRow}>
-              <Pressable
-                style={[styles.smallBtn, item.status === 1 ? styles.dangerBtn : styles.primaryBtn]}
+              <AppButton
+                label={item.status === 1 ? '禁用' : '启用'}
+                icon={item.status === 1 ? 'block' : 'check-circle'}
+                variant={item.status === 1 ? 'danger' : 'primary'}
+                compact
                 onPress={() => toggleStatus(item.id, item.status !== 1)}
-                disabled={busy}>
-                <Text style={[styles.smallBtnText, item.status === 1 ? styles.dangerText : styles.primaryText]}>
-                  {item.status === 1 ? '禁用' : '启用'}
-                </Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.secondaryBtn]} onPress={() => openEdit(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>编辑</Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.ghostBtn]} onPress={() => deleteToken(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>删除</Text>
-              </Pressable>
+                disabled={busy}
+              />
+              <AppButton
+                label="编辑"
+                icon="edit"
+                variant="secondary"
+                compact
+                onPress={() => openEdit(item.id)}
+                disabled={busy}
+              />
+              <AppButton
+                label="删除"
+                icon="delete-outline"
+                variant="danger"
+                compact
+                onPress={() => deleteToken(item.id)}
+                disabled={busy}
+              />
             </View>
             <View style={styles.metaRow}>
               <Text style={styles.metaKey}>Key</Text>
@@ -719,7 +722,9 @@ export default function TokensScreen() {
             </View>
           </Surface>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>暂无令牌，点击“刷新”加载</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无令牌" description="创建一个访问令牌，或刷新列表后重试。" icon="vpn-key" />
+        }
       />
 
       <FloatingPageControls
@@ -738,24 +743,29 @@ export default function TokensScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: '#F3F6F5',
   },
   list: {
     flex: 1,
   },
   container: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
     padding: 16,
-    gap: 12,
+    gap: 16,
   },
   header: {
     gap: 12,
   },
   headerActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   titleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
@@ -763,22 +773,22 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   actionBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
   },
   actionText: {
     fontWeight: '700',
-    color: '#11181C',
+    color: '#15211F',
   },
   primaryBtn: {
-    backgroundColor: '#11181C',
+    backgroundColor: '#0B6B5C',
   },
   primaryText: {
     color: '#fff',
@@ -794,11 +804,11 @@ const styles = StyleSheet.create({
     color: '#991B1B',
   },
   ghostBtn: {
-    backgroundColor: '#667085',
+    backgroundColor: '#63716E',
     borderColor: 'transparent',
   },
   errorText: {
-    color: '#d11',
+    color: '#B42318',
     fontWeight: '600',
   },
   formCard: {
@@ -807,16 +817,17 @@ const styles = StyleSheet.create({
   formTitle: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   sectionTitle: {
     marginTop: 6,
     fontSize: 13,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   formRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
@@ -825,25 +836,28 @@ const styles = StyleSheet.create({
     width: 72,
     fontSize: 13,
     fontWeight: '700',
-    color: '#667085',
+    color: '#63716E',
   },
   formInput: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 220,
+    minWidth: 0,
   },
   formActions: {
     marginTop: 4,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: '#D8E1DE',
     marginTop: 10,
     marginBottom: 2,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -854,7 +868,7 @@ const styles = StyleSheet.create({
   inputLight: {
     borderColor: '#d0d0d0',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   inputDark: {
     borderColor: '#333',
@@ -872,30 +886,30 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
   quickText: {
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 12,
   },
   helpText: {
     marginLeft: 72,
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '600',
   },
   readOnlyBox: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: 'rgba(0,0,0,0.03)',
   },
   readOnlyText: {
-    color: '#11181C',
+    color: '#15211F',
     fontWeight: '700',
   },
   summaryRow: {
@@ -908,19 +922,19 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
-    color: '#667085',
+    color: '#63716E',
     fontWeight: '700',
   },
   summaryValue: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   listTitle: {
     marginTop: 4,
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   item: {
     gap: 10,
@@ -933,25 +947,26 @@ const styles = StyleSheet.create({
   },
   opsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   smallBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
   smallBtnText: {
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   name: {
     flex: 1,
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   metaRow: {
     flexDirection: 'row',
@@ -960,18 +975,18 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metaKey: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 13,
     fontWeight: '600',
   },
   metaVal: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '800',
   },
   empty: {
     paddingTop: 16,
-    color: '#667085',
+    color: '#63716E',
     textAlign: 'center',
   },
 });

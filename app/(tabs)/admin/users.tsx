@@ -4,8 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
 import { formatCount, formatOmega } from '@/lib/format';
@@ -435,9 +438,7 @@ export default function AdminUsersScreen() {
           <Surface>
             <Text style={styles.hint}>无权限</Text>
           </Surface>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backText}>返回</Text>
-          </Pressable>
+          <AppButton label="返回管理" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -453,19 +454,16 @@ export default function AdminUsersScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>用户</Text>
+              <View style={styles.pageTitleGroup}>
+                <AppButton label="返回" icon="arrow-back" variant="quiet" compact onPress={() => router.back()} />
+                <Text style={styles.title}>用户</Text>
+              </View>
               <View style={styles.actions}>
-                <Pressable style={[styles.actionBtn, styles.primaryBtn]} onPress={openCreate} disabled={busy}>
-                  <Text style={[styles.actionText, styles.primaryText]}>新增</Text>
-                </Pressable>
+                <AppButton label="新增用户" icon="person-add" compact onPress={openCreate} disabled={busy} />
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.searchCard}>
               <Text style={styles.cardTitle}>搜索</Text>
@@ -659,7 +657,9 @@ export default function AdminUsersScreen() {
             </Surface>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>暂无用户</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无用户" description="调整搜索条件，或刷新后重试。" icon="group" />
+        }
       />
 
       <FloatingPageControls
@@ -694,11 +694,7 @@ export default function AdminUsersScreen() {
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={styles.sectionTitle}>基本信息</Text>
@@ -810,45 +806,46 @@ export default function AdminUsersScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F8FA' },
+  screen: { flex: 1, backgroundColor: '#F3F6F5' },
   list: { flex: 1 },
-  container: { padding: 16, gap: 12 },
+  container: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 16, gap: 16 },
   header: { gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 20, fontWeight: '900', color: '#11181C' },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  pageTitleGroup: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 20, fontWeight: '900', color: '#15211F' },
   actions: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
   errorText: { color: '#991B1B', fontWeight: '700' },
-  hint: { color: '#667085', fontSize: 12, fontWeight: '600' },
+  hint: { color: '#63716E', fontSize: 12, fontWeight: '600' },
   searchCard: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
+  cardTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
   inlineRow: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
   flex1: { flex: 1 },
   input: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   actionBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     alignSelf: 'flex-start',
   },
-  actionText: { fontWeight: '800', color: '#11181C' },
-  primaryBtn: { backgroundColor: '#11181C', borderColor: 'transparent' },
+  actionText: { fontWeight: '800', color: '#15211F' },
+  primaryBtn: { backgroundColor: '#0B6B5C', borderColor: 'transparent' },
   primaryText: { color: '#fff' },
   dangerBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
   dangerText: { color: '#991B1B' },
-  ghostBtn: { backgroundColor: '#667085', borderColor: 'transparent' },
-  secondaryBtn: { backgroundColor: '#EEF2FF', borderColor: 'rgba(0,0,0,0.08)' },
-  pagerInfo: { flex: 1, textAlign: 'center', color: '#667085', fontSize: 12, fontWeight: '700' },
+  ghostBtn: { backgroundColor: '#63716E', borderColor: 'transparent' },
+  secondaryBtn: { backgroundColor: '#DDF1EC', borderColor: '#D8E1DE' },
+  pagerInfo: { flex: 1, textAlign: 'center', color: '#63716E', fontSize: 12, fontWeight: '700' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   quickBtn: {
     paddingHorizontal: 10,
@@ -856,19 +853,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
   },
-  quickText: { color: '#11181C', fontWeight: '800', fontSize: 12 },
+  quickText: { color: '#15211F', fontWeight: '800', fontSize: 12 },
   item: { gap: 10 },
   itemDisabled: { opacity: 0.75 },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   itemTitleWrap: { flex: 1, gap: 4 },
-  itemTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
-  dim: { color: '#98A2B3', fontWeight: '800' },
-  remark: { color: '#667085', fontSize: 12, fontWeight: '700' },
+  itemTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
+  dim: { color: '#8A9894', fontWeight: '800' },
+  remark: { color: '#63716E', fontSize: 12, fontWeight: '700' },
   kvRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  k: { color: '#667085', fontSize: 12, fontWeight: '700' },
-  v: { color: '#11181C', fontSize: 12, fontWeight: '900' },
+  k: { color: '#63716E', fontSize: 12, fontWeight: '700' },
+  v: { color: '#15211F', fontSize: 12, fontWeight: '900' },
   progressWrap: {
     height: 8,
     borderRadius: 999,
@@ -877,27 +874,27 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#11181C',
+    backgroundColor: '#0B6B5C',
     borderRadius: 999,
   },
   opsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   smallBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  smallBtnText: { fontWeight: '900', color: '#11181C' },
-  empty: { paddingTop: 16, color: '#667085', textAlign: 'center' },
+  smallBtnText: { fontWeight: '900', color: '#15211F' },
+  empty: { paddingTop: 16, color: '#63716E', textAlign: 'center' },
   backBtn: {
     alignSelf: 'flex-start',
     marginTop: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
   },
   backText: { color: '#fff', fontWeight: '900' },
   modalOverlay: {
@@ -908,30 +905,30 @@ const styles = StyleSheet.create({
   },
   modalCard: { maxHeight: '92%', padding: 12, gap: 12 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#11181C' },
+  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
   modalHeaderActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   modalBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  modalBtnText: { fontWeight: '900', color: '#11181C' },
+  modalBtnText: { fontWeight: '900', color: '#15211F' },
   modalBody: { paddingBottom: 12, gap: 10 },
-  sectionTitle: { fontSize: 13, fontWeight: '900', color: '#11181C' },
+  sectionTitle: { fontSize: 13, fontWeight: '900', color: '#15211F' },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  formLabel: { width: 110, color: '#667085', fontSize: 12, fontWeight: '800' },
+  formLabel: { width: 110, color: '#63716E', fontSize: 12, fontWeight: '800' },
   formInput: { flex: 1 },
   readOnlyBox: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#F3F4F6',
   },
-  readOnlyText: { color: '#11181C', fontWeight: '900', fontSize: 12 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.08)' },
+  readOnlyText: { color: '#15211F', fontWeight: '900', fontSize: 12 },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8E1DE' },
 });

@@ -5,7 +5,10 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
 import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
@@ -309,9 +312,7 @@ export default function RedemptionsScreen() {
           <Surface>
             <Text style={styles.hint}>无权限</Text>
           </Surface>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backText}>返回</Text>
-          </Pressable>
+          <AppButton label="返回管理" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -327,22 +328,24 @@ export default function RedemptionsScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>兑换码</Text>
+              <View style={styles.pageTitleGroup}>
+                <AppButton label="返回" icon="arrow-back" variant="quiet" compact onPress={() => router.back()} />
+                <Text style={styles.title}>兑换码</Text>
+              </View>
               <View style={styles.actions}>
-                <Pressable style={[styles.actionBtn, styles.primaryBtn]} onPress={openCreate} disabled={busy}>
-                  <Text style={[styles.actionText, styles.primaryText]}>新增</Text>
-                </Pressable>
-                <Pressable style={[styles.actionBtn, styles.dangerBtn]} onPress={clearInvalid} disabled={busy}>
-                  <Text style={[styles.actionText, styles.dangerText]}>清理失效</Text>
-                </Pressable>
+                <AppButton label="新增兑换码" icon="add" compact onPress={openCreate} disabled={busy} />
+                <AppButton
+                  label="清理失效"
+                  icon="delete-sweep"
+                  variant="danger"
+                  compact
+                  onPress={clearInvalid}
+                  disabled={busy}
+                />
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.searchCard}>
               <Text style={styles.cardTitle}>搜索</Text>
@@ -453,7 +456,9 @@ export default function RedemptionsScreen() {
             </View>
           </Surface>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>暂无兑换码</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无兑换码" description="生成兑换码后会显示在这里。" icon="confirmation-number" />
+        }
       />
 
       <FloatingPageControls
@@ -493,79 +498,80 @@ export default function RedemptionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F8FA' },
+  screen: { flex: 1, backgroundColor: '#F3F6F5' },
   list: { flex: 1 },
-  container: { padding: 16, gap: 12 },
+  container: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 16, gap: 16 },
   header: { gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 20, fontWeight: '800', color: '#11181C' },
-  actions: { flexDirection: 'row', gap: 10 },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  pageTitleGroup: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 20, fontWeight: '800', color: '#15211F' },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   actionBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
   },
-  actionText: { fontWeight: '800', color: '#11181C' },
-  primaryBtn: { backgroundColor: '#11181C', borderColor: 'transparent' },
+  actionText: { fontWeight: '800', color: '#15211F' },
+  primaryBtn: { backgroundColor: '#0B6B5C', borderColor: 'transparent' },
   primaryText: { color: '#fff' },
   dangerBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
   dangerText: { color: '#991B1B' },
-  ghostBtn: { backgroundColor: '#667085', borderColor: 'transparent' },
+  ghostBtn: { backgroundColor: '#63716E', borderColor: 'transparent' },
   secondaryBtn: { backgroundColor: '#fff' },
-  errorText: { color: '#d11', fontWeight: '700' },
+  errorText: { color: '#B42318', fontWeight: '700' },
   searchCard: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
+  cardTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   flex1: { flex: 1 },
-  inlineRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  pagerInfo: { flex: 1, textAlign: 'center', color: '#667085', fontSize: 12, fontWeight: '700' },
+  inlineRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
+  pagerInfo: { flex: 1, textAlign: 'center', color: '#63716E', fontSize: 12, fontWeight: '700' },
   formCard: { gap: 10 },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formLabel: { width: 56, color: '#667085', fontSize: 12, fontWeight: '800' },
+  formLabel: { width: 56, color: '#63716E', fontSize: 12, fontWeight: '800' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginLeft: 56 },
   quickBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  quickText: { fontWeight: '900', color: '#11181C', fontSize: 12 },
-  formActions: { flexDirection: 'row', gap: 10 },
-  hint: { color: '#667085', fontSize: 12, fontWeight: '600' },
+  quickText: { fontWeight: '900', color: '#15211F', fontSize: 12 },
+  formActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  hint: { color: '#63716E', fontSize: 12, fontWeight: '600' },
   item: { gap: 10 },
   itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  itemTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#11181C' },
+  itemTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
   kvRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  k: { color: '#667085', fontSize: 12, fontWeight: '700' },
-  v: { color: '#11181C', fontSize: 12, fontWeight: '900' },
+  k: { color: '#63716E', fontSize: 12, fontWeight: '700' },
+  v: { color: '#15211F', fontSize: 12, fontWeight: '900' },
   opsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   smallBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  smallBtnText: { fontWeight: '900', color: '#11181C' },
-  empty: { paddingTop: 16, color: '#667085', textAlign: 'center' },
-  backBtn: { alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, backgroundColor: '#11181C' },
+  smallBtnText: { fontWeight: '900', color: '#15211F' },
+  empty: { paddingTop: 16, color: '#63716E', textAlign: 'center' },
+  backBtn: { alignSelf: 'flex-start', marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#0B6B5C' },
   backText: { color: '#fff', fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 16 },
-  modalCard: { maxHeight: '85%', borderRadius: 16, backgroundColor: '#fff', overflow: 'hidden' },
+  modalCard: { maxHeight: '85%', borderRadius: 8, backgroundColor: '#fff', overflow: 'hidden' },
   modalHeader: {
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -573,11 +579,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.12)',
+    borderBottomColor: '#D8E1DE',
     gap: 10,
   },
-  modalTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
+  modalTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
   modalActions: { flexDirection: 'row', gap: 10 },
   modalBody: { padding: 14 },
-  mono: { fontFamily: 'ui-monospace', fontSize: 12, color: '#11181C' },
+  mono: { fontFamily: 'ui-monospace', fontSize: 12, color: '#15211F' },
 });

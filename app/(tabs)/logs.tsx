@@ -1,11 +1,24 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -331,11 +344,7 @@ export default function LogsScreen() {
           <View style={styles.header}>
             <Text style={styles.title}>日志</Text>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.filterCard}>
               <Text style={styles.cardTitle}>筛选</Text>
@@ -360,7 +369,7 @@ export default function LogsScreen() {
                 value={tokenName}
                 onChangeText={setTokenName}
                 placeholder="令牌名 token_name（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
+                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={inputStyle}
@@ -369,7 +378,7 @@ export default function LogsScreen() {
                 value={modelName}
                 onChangeText={setModelName}
                 placeholder="模型名 model_name（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
+                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={inputStyle}
@@ -380,9 +389,9 @@ export default function LogsScreen() {
                 onChange={setGroup}
                 options={groupOptions}
                 placeholder="分组（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
+                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
                 style={inputStyle}
-                textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#11181C' }}
+                textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#15211F' }}
               />
 
               <View style={styles.timeRow}>
@@ -414,11 +423,18 @@ export default function LogsScreen() {
               </View>
 
               <View style={styles.inlineRow}>
-                <Pressable style={styles.smallBtn} onPress={() => load(1)} disabled={busy}>
-                  <Text style={styles.smallBtnText}>{busy ? '加载中…' : '查询'}</Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.smallBtn, styles.ghostBtn]}
+                <AppButton
+                  label="查询"
+                  icon="search"
+                  compact
+                  loading={busy}
+                  onPress={() => load(1)}
+                />
+                <AppButton
+                  label="重置"
+                  icon="restart-alt"
+                  variant="secondary"
+                  compact
                   onPress={() => {
                     setLogType(0);
                     setTokenName('');
@@ -428,9 +444,8 @@ export default function LogsScreen() {
                     setEndTs(String(nowSeconds()));
                     void load(1);
                   }}
-                  disabled={busy}>
-                  <Text style={styles.smallBtnText}>重置</Text>
-                </Pressable>
+                  disabled={busy}
+                />
               </View>
             </Surface>
 
@@ -497,7 +512,7 @@ export default function LogsScreen() {
               disabled={busy}>
               <Surface style={styles.item}>
                 <View style={styles.itemTop}>
-                  <Badge text={logTypeLabel(item.type)} color="#EEF2FF" />
+                  <Badge text={logTypeLabel(item.type)} color="#DDF1EC" />
                   <Text style={styles.time}>{formatDateTimeEpochSeconds(item.createdAt)}</Text>
                 </View>
                 {!!(item.modelName || item.tokenName) && (
@@ -525,7 +540,9 @@ export default function LogsScreen() {
             </Pressable>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>暂无日志</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无日志" description="调整筛选条件，或刷新后重试。" icon="receipt-long" />
+        }
       />
 
       <FloatingPageControls
@@ -544,14 +561,17 @@ export default function LogsScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: '#F3F6F5',
   },
   list: {
     flex: 1,
   },
   container: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
     padding: 16,
-    gap: 12,
+    gap: 16,
   },
   header: {
     gap: 12,
@@ -559,30 +579,30 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   errorText: {
-    color: '#d11',
+    color: '#B42318',
     fontWeight: '600',
   },
   cardTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   filterCard: {
     gap: 10,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   inputLight: {
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   inputDark: {
     borderColor: '#333',
@@ -591,21 +611,22 @@ const styles = StyleSheet.create({
   },
   inlineRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   smallBtn: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
   },
   smallBtnText: {
     color: '#fff',
     fontWeight: '800',
   },
   ghostBtn: {
-    backgroundColor: '#667085',
+    backgroundColor: '#63716E',
   },
   statCard: {
     gap: 10,
@@ -616,12 +637,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   statKey: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 13,
     fontWeight: '600',
   },
   statVal: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '800',
   },
@@ -632,7 +653,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   item: {
     gap: 10,
@@ -645,7 +666,7 @@ const styles = StyleSheet.create({
   title2: {
     fontSize: 13,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   kvInline: {
     flexDirection: 'row',
@@ -654,33 +675,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inlineKey: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   inlineVal: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 12,
     fontWeight: '900',
   },
   time: {
-    color: '#98A2B3',
+    color: '#8A9894',
     fontSize: 12,
     fontWeight: '600',
   },
   content: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     lineHeight: 18,
   },
   meta: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     marginTop: 2,
   },
   empty: {
     paddingTop: 16,
-    color: '#667085',
+    color: '#63716E',
     textAlign: 'center',
   },
   chipRow: {
@@ -696,28 +717,28 @@ const styles = StyleSheet.create({
   },
   chipIdle: {
     backgroundColor: '#fff',
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
   },
   chipActive: {
-    backgroundColor: '#11181C',
-    borderColor: '#11181C',
+    backgroundColor: '#0B6B5C',
+    borderColor: '#0B6B5C',
   },
   chipText: {
     fontSize: 12,
     fontWeight: '900',
   },
   chipTextIdle: {
-    color: '#11181C',
+    color: '#15211F',
   },
   chipTextActive: {
     color: '#fff',
   },
   timeRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 10,
   },
   timeInput: {
-    flex: 1,
+    width: '100%',
   },
   pagerRow: {
     flexDirection: 'row',
@@ -728,7 +749,7 @@ const styles = StyleSheet.create({
   pagerInfo: {
     flex: 1,
     textAlign: 'center',
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -740,7 +761,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '85%',
-    borderRadius: 16,
+    borderRadius: 8,
     backgroundColor: '#fff',
     overflow: 'hidden',
   },
@@ -751,7 +772,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.12)',
+    borderBottomColor: '#D8E1DE',
   },
   modalHeaderActions: {
     flexDirection: 'row',
@@ -760,13 +781,13 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   modalClose: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
   },
   modalCopy: {
     backgroundColor: '#2563EB',
@@ -785,12 +806,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   k: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   v: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 12,
     fontWeight: '900',
     flex: 1,
@@ -800,12 +821,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 13,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   mono: {
     fontFamily: 'ui-monospace',
     fontSize: 12,
-    color: '#11181C',
+    color: '#15211F',
     opacity: 0.9,
   },
 });

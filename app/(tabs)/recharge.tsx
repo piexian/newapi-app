@@ -6,8 +6,11 @@ import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { Surface } from '@/components/ui/surface';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { useApi } from '@/hooks/use-api';
 import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseTopupInfo, parseTopupRecords, parseUser } from '@/lib/parsers';
@@ -421,11 +424,7 @@ export default function RechargeScreen() {
               <Text style={styles.title}>充值</Text>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <View style={styles.summaryRow}>
               <Surface style={styles.summaryCard}>
@@ -449,18 +448,33 @@ export default function RechargeScreen() {
                   autoCorrect={false}
                   style={[styles.input, styles.flex1]}
                 />
-                <Pressable style={styles.ghostBtn} onPress={pasteRedemptionCode} disabled={redeeming || busy}>
-                  <Text style={styles.ghostText}>粘贴</Text>
-                </Pressable>
-                <Pressable style={styles.primaryBtn} onPress={redeem} disabled={redeeming || busy}>
-                  <Text style={styles.primaryText}>{redeeming ? '兑换中…' : '兑换'}</Text>
-                </Pressable>
+                <AppButton
+                  label="粘贴"
+                  icon="content-paste"
+                  variant="secondary"
+                  compact
+                  onPress={pasteRedemptionCode}
+                  disabled={redeeming || busy}
+                />
+                <AppButton
+                  label="兑换"
+                  icon="redeem"
+                  compact
+                  loading={redeeming}
+                  onPress={redeem}
+                  disabled={busy}
+                />
               </View>
               <Text style={styles.hint}>兑换成功后会自动刷新余额与记录</Text>
               {!!topUpLink.trim() && (
-                <Pressable style={styles.buyBtn} onPress={openBuyLink} disabled={busy || redeeming}>
-                  <Text style={styles.buyText}>购买兑换码</Text>
-                </Pressable>
+                <AppButton
+                  label="购买兑换码"
+                  icon="shopping-bag"
+                  variant="secondary"
+                  compact
+                  onPress={openBuyLink}
+                  disabled={busy || redeeming}
+                />
               )}
             </Surface>
 
@@ -524,9 +538,15 @@ export default function RechargeScreen() {
                       placeholder={`最小 ${minTopup}`}
                       style={[styles.input, styles.flex1]}
                     />
-                    <Pressable style={styles.ghostBtn} onPress={getAmount} disabled={amountLoading || busy || paying}>
-                      <Text style={styles.ghostText}>{amountLoading ? '计算中…' : '计算'}</Text>
-                    </Pressable>
+                    <AppButton
+                      label="计算"
+                      icon="calculate"
+                      variant="secondary"
+                      compact
+                      loading={amountLoading}
+                      onPress={getAmount}
+                      disabled={busy || paying}
+                    />
                   </View>
 
                   <View style={styles.kvRow}>
@@ -544,9 +564,14 @@ export default function RechargeScreen() {
                     </Text>
                   </View>
 
-                  <Pressable style={[styles.primaryBtn, styles.payBtn]} onPress={startPay} disabled={busy || paying}>
-                    <Text style={styles.primaryText}>{paying ? '支付中…' : '去支付'}</Text>
-                  </Pressable>
+                  <AppButton
+                    label="去支付"
+                    icon="arrow-forward"
+                    fullWidth
+                    loading={paying}
+                    onPress={startPay}
+                    disabled={busy}
+                  />
                 </View>
               )}
             </Surface>
@@ -590,9 +615,14 @@ export default function RechargeScreen() {
                   placeholder="关键字（订单号/渠道）"
                   style={[styles.input, styles.flex1]}
                 />
-                <Pressable style={styles.ghostBtn} onPress={() => load(1)} disabled={busy}>
-                  <Text style={styles.ghostText}>搜索</Text>
-                </Pressable>
+                <AppButton
+                  label="搜索"
+                  icon="search"
+                  variant="secondary"
+                  compact
+                  onPress={() => load(1)}
+                  disabled={busy}
+                />
               </View>
               <Text style={styles.pagerInfo}>{pagerInfo}</Text>
             </Surface>
@@ -621,7 +651,9 @@ export default function RechargeScreen() {
             </View>
           </Surface>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>暂无充值记录</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无充值记录" description="完成充值后，交易记录会显示在这里。" icon="payments" />
+        }
       />
 
       <FloatingPageControls
@@ -661,20 +693,24 @@ export default function RechargeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: '#F3F6F5',
   },
   list: {
     flex: 1,
   },
   container: {
+    width: '100%',
+    maxWidth: 1180,
+    alignSelf: 'center',
     padding: 16,
-    gap: 12,
+    gap: 16,
   },
   header: {
     gap: 12,
   },
   titleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
@@ -682,10 +718,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   errorText: {
-    color: '#d11',
+    color: '#B42318',
     fontWeight: '600',
   },
   summaryRow: {
@@ -698,51 +734,54 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
-    color: '#667085',
+    color: '#63716E',
     fontWeight: '700',
   },
   summaryValue: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   cardTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   hint: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '600',
   },
   label: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 12,
     fontWeight: '900',
   },
   inlineRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     alignItems: 'center',
   },
   flex1: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: 220,
+    minWidth: 0,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   primaryBtn: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
     alignSelf: 'flex-start',
   },
   primaryText: {
@@ -752,8 +791,8 @@ const styles = StyleSheet.create({
   ghostBtn: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#667085',
+    borderRadius: 8,
+    backgroundColor: '#63716E',
     alignSelf: 'flex-start',
   },
   ghostText: {
@@ -763,7 +802,7 @@ const styles = StyleSheet.create({
   buyBtn: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#2563EB',
     alignSelf: 'flex-start',
   },
@@ -803,18 +842,18 @@ const styles = StyleSheet.create({
   },
   chipIdle: {
     backgroundColor: '#fff',
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
   },
   chipActive: {
-    backgroundColor: '#11181C',
-    borderColor: '#11181C',
+    backgroundColor: '#0B6B5C',
+    borderColor: '#0B6B5C',
   },
   chipText: {
     fontSize: 12,
     fontWeight: '900',
   },
   chipTextIdle: {
-    color: '#11181C',
+    color: '#15211F',
   },
   chipTextActive: {
     color: '#fff',
@@ -826,12 +865,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   k: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   v: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 12,
     fontWeight: '900',
     flex: 1,
@@ -849,9 +888,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
   creemLeft: {
@@ -859,12 +898,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   creemName: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '900',
   },
   creemPrice: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '900',
   },
@@ -874,7 +913,7 @@ const styles = StyleSheet.create({
   pagerInfo: {
     flex: 1,
     textAlign: 'center',
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -891,11 +930,11 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   empty: {
     paddingTop: 16,
-    color: '#667085',
+    color: '#63716E',
     textAlign: 'center',
   },
   modalBackdrop: {
@@ -906,7 +945,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '85%',
-    borderRadius: 16,
+    borderRadius: 8,
     backgroundColor: '#fff',
     overflow: 'hidden',
   },
@@ -917,18 +956,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.12)',
+    borderBottomColor: '#D8E1DE',
   },
   modalTitle: {
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   modalClose: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
   },
   modalCloseText: {
     color: '#fff',

@@ -16,8 +16,11 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { useApi } from '@/hooks/use-api';
 import { formatDateTimeEpochSeconds } from '@/lib/format';
@@ -835,9 +838,7 @@ export default function ChannelsScreen() {
           <Surface>
             <Text style={styles.hint}>无权限</Text>
           </Surface>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backText}>返回</Text>
-          </Pressable>
+          <AppButton label="返回管理" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
         </View>
       </View>
     );
@@ -856,19 +857,16 @@ export default function ChannelsScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>渠道</Text>
+              <View style={styles.pageTitleGroup}>
+                <AppButton label="返回" icon="arrow-back" variant="quiet" compact onPress={() => router.back()} />
+                <Text style={styles.title}>渠道</Text>
+              </View>
               <View style={styles.headerActions}>
-                <Pressable style={[styles.actionBtn, styles.primaryBtn]} onPress={openCreate} disabled={busy}>
-                  <Text style={[styles.actionText, styles.primaryText]}>新增</Text>
-                </Pressable>
+                <AppButton label="新增渠道" icon="add" compact onPress={openCreate} disabled={busy} />
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.searchCard}>
               <Text style={styles.cardTitle}>筛选</Text>
@@ -1035,7 +1033,9 @@ export default function ChannelsScreen() {
             </View>
           </Surface>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>暂无渠道</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无渠道" description="创建渠道后会显示在这里。" icon="hub" />
+        }
       />
 
       <Modal
@@ -1068,11 +1068,7 @@ export default function ChannelsScreen() {
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
             <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
               <Text style={styles.sectionTitle}>基本信息</Text>
@@ -1354,7 +1350,7 @@ export default function ChannelsScreen() {
               data={filteredFetchedModels}
               keyExtractor={(it) => it}
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={styles.empty}>暂无模型</Text>}
+              ListEmptyComponent={<EmptyState title="暂无模型" icon="view-in-ar" />}
               renderItem={({ item }) => {
                 const active = selectedModels.has(item);
                 return (
@@ -1387,22 +1383,23 @@ export default function ChannelsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F8FA' },
+  screen: { flex: 1, backgroundColor: '#F3F6F5' },
   list: { flex: 1 },
-  container: { padding: 16, gap: 12 },
+  container: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 16, gap: 16 },
   header: { gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 20, fontWeight: '800', color: '#11181C' },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  errorText: { color: '#d11', fontWeight: '700' },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  pageTitleGroup: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 20, fontWeight: '800', color: '#15211F' },
+  headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
+  errorText: { color: '#B42318', fontWeight: '700' },
   searchCard: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
+  cardTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
-  chipIdle: { backgroundColor: '#fff', borderColor: 'rgba(0,0,0,0.12)' },
-  chipActive: { backgroundColor: '#11181C', borderColor: '#11181C' },
+  chipIdle: { backgroundColor: '#fff', borderColor: '#D8E1DE' },
+  chipActive: { backgroundColor: '#0B6B5C', borderColor: '#0B6B5C' },
   chipText: { fontSize: 12, fontWeight: '900' },
-  chipTextIdle: { color: '#11181C' },
+  chipTextIdle: { color: '#15211F' },
   chipTextActive: { color: '#fff' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   quickBtn: {
@@ -1411,19 +1408,19 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
   },
-  quickText: { color: '#11181C', fontWeight: '800', fontSize: 12 },
+  quickText: { color: '#15211F', fontWeight: '800', fontSize: 12 },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formLabel: { width: 56, color: '#667085', fontSize: 12, fontWeight: '800' },
+  formLabel: { width: 56, color: '#63716E', fontSize: 12, fontWeight: '800' },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
-    color: '#11181C',
+    color: '#15211F',
   },
   textArea: { minHeight: 64, textAlignVertical: 'top' },
   flex1: { flex: 1 },
@@ -1431,46 +1428,46 @@ const styles = StyleSheet.create({
   actionBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     backgroundColor: '#fff',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     alignSelf: 'flex-start',
   },
-  actionText: { fontWeight: '800', color: '#11181C' },
-  primaryBtn: { backgroundColor: '#11181C', borderColor: 'transparent' },
+  actionText: { fontWeight: '800', color: '#15211F' },
+  primaryBtn: { backgroundColor: '#0B6B5C', borderColor: 'transparent' },
   primaryText: { color: '#fff' },
   dangerBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
   dangerText: { color: '#991B1B' },
-  ghostBtn: { backgroundColor: '#667085', borderColor: 'transparent' },
-  pagerInfo: { flex: 1, textAlign: 'center', color: '#667085', fontSize: 12, fontWeight: '700' },
+  ghostBtn: { backgroundColor: '#63716E', borderColor: 'transparent' },
+  pagerInfo: { flex: 1, textAlign: 'center', color: '#63716E', fontSize: 12, fontWeight: '700' },
   item: { gap: 10 },
   itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  itemTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#11181C' },
+  itemTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
   kvRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  k: { color: '#667085', fontSize: 12, fontWeight: '700' },
-  v: { color: '#11181C', fontSize: 12, fontWeight: '900' },
+  k: { color: '#63716E', fontSize: 12, fontWeight: '700' },
+  v: { color: '#15211F', fontSize: 12, fontWeight: '900' },
   opsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   smallBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  smallBtnText: { fontWeight: '900', color: '#11181C' },
-  empty: { paddingTop: 16, color: '#667085', textAlign: 'center' },
+  smallBtnText: { fontWeight: '900', color: '#15211F' },
+  empty: { paddingTop: 16, color: '#63716E', textAlign: 'center' },
   backBtn: {
     alignSelf: 'flex-start',
     marginTop: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
+    borderRadius: 8,
+    backgroundColor: '#0B6B5C',
   },
   backText: { color: '#fff', fontWeight: '900' },
-  hint: { color: '#667085', fontSize: 12, fontWeight: '600' },
+  hint: { color: '#63716E', fontSize: 12, fontWeight: '600' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.25)',
@@ -1479,17 +1476,17 @@ const styles = StyleSheet.create({
   },
   modalCard: { maxHeight: '92%', padding: 12, gap: 12 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#11181C' },
+  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
   modalHeaderActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   modalBtn: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
     backgroundColor: '#fff',
   },
-  modalBtnText: { fontWeight: '900', color: '#11181C' },
+  modalBtnText: { fontWeight: '900', color: '#15211F' },
   modalBody: { paddingBottom: 12, gap: 10 },
   modelRow: {
     flexDirection: 'row',
@@ -1498,12 +1495,12 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
+    borderBottomColor: '#E6ECEA',
   },
-  modelText: { flex: 1, color: '#11181C', fontSize: 12, fontWeight: '800' },
+  modelText: { flex: 1, color: '#15211F', fontSize: 12, fontWeight: '800' },
   modelCheck: { width: 22, textAlign: 'center', fontWeight: '900' },
-  modelCheckOn: { color: '#11181C' },
+  modelCheckOn: { color: '#15211F' },
   modelCheckOff: { color: 'transparent' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.08)' },
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#11181C' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8E1DE' },
+  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#15211F' },
 });

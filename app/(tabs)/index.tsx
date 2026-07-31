@@ -11,6 +11,8 @@ import { useSettings } from '@/providers/settings-provider';
 import { Surface } from '@/components/ui/surface';
 import { StatTile } from '@/components/ui/stat-tile';
 import { FloatingRefreshButton } from '@/components/ui/floating-refresh';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Layout, Palette } from '@/constants/theme';
 
 type ModelAgg = { model: string; quota: number; count: number; tokens: number };
 
@@ -182,23 +184,20 @@ export default function DashboardScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
+          { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
         ]}
         keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
-          <View>
+          <View style={styles.headerCopy}>
             <Text style={styles.greet}>
               {greetingPrefix()}，{displayName}
             </Text>
             <Text style={styles.sub}>Base URL：{baseUrl || '未设置'} · UserId：{userId}</Text>
           </View>
+          <FloatingRefreshButton onPress={refresh} disabled={busy} label={busy ? '刷新中' : '刷新'} />
         </View>
 
-        {!!error && (
-          <Surface>
-            <Text style={styles.error}>{error}</Text>
-          </Surface>
-        )}
+        {!!error && <InlineNotice message={error} />}
 
         <Surface style={styles.rangeCard}>
           <Text style={styles.sectionTitle}>统计范围</Text>
@@ -352,8 +351,6 @@ export default function DashboardScreen() {
           </View>
         </Surface>
       </ScrollView>
-
-      <FloatingRefreshButton onPress={refresh} disabled={busy} label={busy ? '刷新中…' : '刷新'} />
     </View>
   );
 }
@@ -361,30 +358,37 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: Palette.canvas,
   },
   container: {
-    padding: 16,
-    gap: 12,
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  headerCopy: {
+    minWidth: 0,
+    flex: 1,
   },
   greet: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#11181C',
+    color: Palette.ink,
   },
   sub: {
     marginTop: 4,
     fontSize: 12,
-    color: '#667085',
+    color: Palette.muted,
   },
   error: {
-    color: '#d11',
+    color: Palette.danger,
     fontWeight: '600',
   },
   rangeCard: {
@@ -403,18 +407,18 @@ const styles = StyleSheet.create({
   },
   chipIdle: {
     backgroundColor: '#fff',
-    borderColor: 'rgba(0,0,0,0.12)',
+    borderColor: '#D8E1DE',
   },
   chipActive: {
-    backgroundColor: '#11181C',
-    borderColor: '#11181C',
+    backgroundColor: '#0B6B5C',
+    borderColor: '#0B6B5C',
   },
   chipText: {
     fontSize: 12,
     fontWeight: '900',
   },
   chipTextIdle: {
-    color: '#11181C',
+    color: '#15211F',
   },
   chipTextActive: {
     color: '#fff',
@@ -423,7 +427,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     fontWeight: '900',
-    color: '#11181C',
+    color: '#15211F',
   },
   grid: {
     flexDirection: 'row',
@@ -445,12 +449,12 @@ const styles = StyleSheet.create({
   },
   modelName: {
     flex: 1,
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '800',
   },
   modelVal: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '900',
   },
@@ -460,7 +464,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
+    color: '#15211F',
   },
   kvRow: {
     flexDirection: 'row',
@@ -468,17 +472,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   k: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 13,
     fontWeight: '600',
   },
   v: {
-    color: '#11181C',
+    color: '#15211F',
     fontSize: 13,
     fontWeight: '700',
   },
   hint: {
-    color: '#667085',
+    color: '#63716E',
     fontSize: 12,
     fontWeight: '600',
   },

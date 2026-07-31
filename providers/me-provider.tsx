@@ -30,18 +30,23 @@ export function MeProvider({ children }: { children: React.ReactNode }) {
       setIsLoaded(authLoaded);
       return;
     }
-    const res = await api.request({ path: '/api/user/self' });
-    const body = res.body as unknown;
-    if (body && typeof body === 'object' && !Array.isArray(body) && 'success' in (body as any)) {
-      const success = (body as { success?: boolean }).success;
-      if (success === false) {
-        setMe(null);
-        setIsLoaded(true);
-        return;
+    try {
+      const res = await api.request({ path: '/api/user/self' });
+      const body = res.body as unknown;
+      if (body && typeof body === 'object' && !Array.isArray(body) && 'success' in (body as any)) {
+        const success = (body as { success?: boolean }).success;
+        if (success === false) {
+          setMe(null);
+          setIsLoaded(true);
+          return;
+        }
       }
+      setMe(parseUser(body));
+    } catch {
+      setMe(null);
+    } finally {
+      setIsLoaded(true);
     }
-    setMe(parseUser(body));
-    setIsLoaded(true);
   }, [api, authLoaded, baseUrl, isSignedIn]);
 
   useEffect(() => {
@@ -75,4 +80,3 @@ export function useMe(): MeContextValue {
   if (!ctx) throw new Error('useMe must be used within MeProvider');
   return ctx;
 }
-

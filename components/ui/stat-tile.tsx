@@ -4,13 +4,14 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { Surface } from '@/components/ui/surface';
 import { Sparkline } from '@/components/ui/sparkline';
+import { Palette, Radius } from '@/constants/theme';
 
 export function StatTile({
   title,
   value,
   subtitle,
   icon,
-  iconColor = '#2563EB',
+  iconColor = Palette.accent,
   sparkline,
 }: {
   title: string;
@@ -49,7 +50,9 @@ export function StatTile({
 
 const styles = StyleSheet.create({
   card: {
-    padding: 14,
+    minHeight: 132,
+    padding: 16,
+    justifyContent: 'space-between',
   },
   row: {
     flexDirection: 'row',
@@ -59,18 +62,18 @@ const styles = StyleSheet.create({
   iconWrap: {
     width: 30,
     height: 30,
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
     flex: 1,
     fontSize: 13,
-    color: '#667085',
+    color: Palette.muted,
     fontWeight: '600',
   },
   bottomRow: {
-    marginTop: 10,
+    marginTop: 18,
     gap: 8,
   },
   left: {
@@ -78,14 +81,15 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#11181C',
+    fontWeight: '700',
+    color: Palette.ink,
+    fontVariant: ['tabular-nums'],
     includeFontPadding: false,
   },
   subtitle: {
     marginTop: 2,
     fontSize: 12,
-    color: '#98A2B3',
+    color: Palette.subtle,
   },
   sparklineWrap: {
     alignSelf: 'flex-end',
