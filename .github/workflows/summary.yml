@@ -11,12 +11,15 @@ jobs:
       issues: write
       models: read
     if: ${{ github.repository == vars.ALLOWED_REPO }}
+    env:
+      MODELS_ENDPOINT: https://models.github.ai/inference/chat/completions
+      TRIAGE_MODEL: openai/gpt-4o-mini
 
     steps:
       - name: AI classify + Chinese summary
         id: ai
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           TITLE:    ${{ github.event.issue.title }}
           BODY:     ${{ github.event.issue.body }}
         run: |
@@ -36,9 +39,10 @@ jobs:
           "Issue 正文：" "$BODY")"
 
           PAYLOAD="$(jq -n \
+            --arg model "$TRIAGE_MODEL" \
             --arg prompt "$PROMPT" \
             '{
-              model: "openai/gpt-4o-mini",
+              model: $model,
               messages: [
                 {role:"system", content:"Return only valid JSON. No markdown."},
                 {role:"user", content:$prompt}
@@ -46,22 +50,30 @@ jobs:
               temperature: 0.2
             }')"
 
-          ENDPOINT="https://models.github.ai/inference/chat/completions"
           RESPONSE_FILE="$(mktemp)"
           trap 'rm -f "$RESPONSE_FILE"' EXIT
-          HTTP_STATUS="$(curl -sS \
-            --connect-timeout 15 \
-            --max-time 120 \
-            --retry 2 \
-            --retry-all-errors \
-            -o "$RESPONSE_FILE" \
-            -w '%{http_code}' \
-            "$ENDPOINT" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" || true)"
+          if HTTP_STATUS="$(curl -sS \
+              --connect-timeout 15 \
+              --max-time 120 \
+              --retry 2 \
+              --retry-all-errors \
+              -o "$RESPONSE_FILE" \
+              -w '%{http_code}' \
+              "$MODELS_ENDPOINT" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD")"; then
+            CURL_EXIT_CODE=0
+          else
+            CURL_EXIT_CODE=$?
+          fi
+
+          if [[ "$CURL_EXIT_CODE" -ne 0 ]]; then
+            echo "::error::GitHub Models request failed with curl exit code ${CURL_EXIT_CODE}."
+            exit 1
+          fi
 
           if [[ ! "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] || \
             ! jq -e '.choices[0].message.content | type == "string"' "$RESPONSE_FILE" >/dev/null 2>&1; then
@@ -105,7 +117,7 @@ jobs:
 
       - name: Apply labels
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           GH_REPO:  ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           LABELS_JSON: ${{ steps.ai.outputs.labels }}
@@ -128,7 +140,7 @@ jobs:
 
       - name: Comment summary
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           GH_REPO:  ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           SUMMARY: ${{ steps.ai.outputs.summary }}
