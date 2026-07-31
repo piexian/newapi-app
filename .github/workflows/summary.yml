@@ -48,14 +48,53 @@ jobs:
               temperature: 0.2
             }')"
 
-          RESP="$(curl -sS "${API_BASE}/chat/completions" \
-            -H "Authorization: Bearer ${API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD")"
+          API_ROOT="${API_BASE%/}"
+          if [[ "$API_ROOT" == */chat/completions ]]; then
+            ENDPOINTS=("$API_ROOT")
+          elif [[ "$API_ROOT" == */v1 ]]; then
+            ENDPOINTS=("${API_ROOT}/chat/completions")
+          else
+            ENDPOINTS=("${API_ROOT}/chat/completions" "${API_ROOT}/v1/chat/completions")
+          fi
 
-          CONTENT="$(echo "$RESP" | jq -r '.choices[0].message.content // empty')"
-          SUMMARY="$(echo "$CONTENT" | jq -r '.summary_zh // empty')"
-          LABELS="$(echo "$CONTENT" | jq -c '.labels // []')"
+          RESPONSE_FILE="$(mktemp)"
+          trap 'rm -f "$RESPONSE_FILE"' EXIT
+          REQUEST_OK=false
+          HTTP_STATUS=curl-error
+
+          for endpoint in "${ENDPOINTS[@]}"; do
+            HTTP_STATUS="$(curl -sS \
+              --connect-timeout 15 \
+              --max-time 120 \
+              --retry 2 \
+              --retry-all-errors \
+              -o "$RESPONSE_FILE" \
+              -w '%{http_code}' \
+              "$endpoint" \
+              -H "Authorization: Bearer ${API_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD" || true)"
+
+            if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] && \
+              jq -e '.choices[0].message.content | type == "string"' "$RESPONSE_FILE" >/dev/null 2>&1; then
+              REQUEST_OK=true
+              break
+            fi
+          done
+
+          if [[ "$REQUEST_OK" != true ]]; then
+            echo "::error::Proxy API did not return an OpenAI-compatible chat completion (HTTP ${HTTP_STATUS})."
+            head -c 1000 "$RESPONSE_FILE" || true
+            exit 1
+          fi
+
+          CONTENT="$(jq -r '.choices[0].message.content' "$RESPONSE_FILE")"
+          SUMMARY="$(jq -r '.summary_zh // empty' <<< "$CONTENT")"
+          RAW_LABELS="$(jq -c '.labels // []' <<< "$CONTENT")"
+          LABELS="$(jq -cn \
+            --argjson labels "$RAW_LABELS" \
+            --argjson allowed "$ALLOWED_LABELS_JSON" \
+            '$labels | map(select(. as $label | $allowed | index($label))) | unique | .[:3]')"
 
           [ -n "$SUMMARY" ] || exit 1
 
