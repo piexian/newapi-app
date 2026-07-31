@@ -9,15 +9,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
+      models: read
     if: ${{ github.repository == vars.ALLOWED_REPO }}
 
     steps:
       - name: AI classify + Chinese summary
         id: ai
         env:
-          API_BASE: ${{ secrets.PROXY_API_BASE }}
-          API_KEY:  ${{ secrets.PROXY_API_KEY }}
-          MODEL:    ${{ secrets.PROXY_MODEL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TITLE:    ${{ github.event.issue.title }}
           BODY:     ${{ github.event.issue.body }}
         run: |
@@ -37,10 +36,9 @@ jobs:
           "Issue 正文：" "$BODY")"
 
           PAYLOAD="$(jq -n \
-            --arg model "$MODEL" \
             --arg prompt "$PROMPT" \
             '{
-              model: $model,
+              model: "openai/gpt-4o-mini",
               messages: [
                 {role:"system", content:"Return only valid JSON. No markdown."},
                 {role:"user", content:$prompt}
@@ -48,44 +46,26 @@ jobs:
               temperature: 0.2
             }')"
 
-          API_ROOT="${API_BASE%/}"
-          if [[ "$API_ROOT" == */chat/completions ]]; then
-            ENDPOINTS=("$API_ROOT")
-          elif [[ "$API_ROOT" == */v1 ]]; then
-            ENDPOINTS=("${API_ROOT}/chat/completions")
-          else
-            ENDPOINTS=("${API_ROOT}/chat/completions" "${API_ROOT}/v1/chat/completions")
-          fi
-
+          ENDPOINT="https://models.github.ai/inference/chat/completions"
           RESPONSE_FILE="$(mktemp)"
           trap 'rm -f "$RESPONSE_FILE"' EXIT
-          REQUEST_OK=false
-          HTTP_STATUS=curl-error
-          FAILED_ENDPOINT=""
+          HTTP_STATUS="$(curl -sS \
+            --connect-timeout 15 \
+            --max-time 120 \
+            --retry 2 \
+            --retry-all-errors \
+            -o "$RESPONSE_FILE" \
+            -w '%{http_code}' \
+            "$ENDPOINT" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" || true)"
 
-          for endpoint in "${ENDPOINTS[@]}"; do
-            FAILED_ENDPOINT="$endpoint"
-            HTTP_STATUS="$(curl -sS \
-              --connect-timeout 15 \
-              --max-time 120 \
-              --retry 2 \
-              --retry-all-errors \
-              -o "$RESPONSE_FILE" \
-              -w '%{http_code}' \
-              "$endpoint" \
-              -H "Authorization: Bearer ${API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "$PAYLOAD" || true)"
-
-            if [[ "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] && \
-              jq -e '.choices[0].message.content | type == "string"' "$RESPONSE_FILE" >/dev/null 2>&1; then
-              REQUEST_OK=true
-              break
-            fi
-          done
-
-          if [[ "$REQUEST_OK" != true ]]; then
-            echo "::error::Proxy API did not return an OpenAI-compatible chat completion from ${FAILED_ENDPOINT} (HTTP ${HTTP_STATUS})."
+          if [[ ! "$HTTP_STATUS" =~ ^2[0-9][0-9]$ ]] || \
+            ! jq -e '.choices[0].message.content | type == "string"' "$RESPONSE_FILE" >/dev/null 2>&1; then
+            echo "::error::GitHub Models did not return a compatible chat completion (HTTP ${HTTP_STATUS})."
             head -c 1000 "$RESPONSE_FILE" || true
             exit 1
           fi
