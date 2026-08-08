@@ -1,16 +1,20 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  type GestureResponderEvent,
   type PressableProps,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 
-import { Palette, Radius } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'quiet';
 
@@ -24,20 +28,6 @@ export type AppButtonProps = Omit<PressableProps, 'children' | 'style'> & {
   style?: StyleProp<ViewStyle>;
 };
 
-const variantStyles = {
-  primary: { backgroundColor: Palette.accent, borderColor: Palette.accent },
-  secondary: { backgroundColor: Palette.surface, borderColor: Palette.borderStrong },
-  danger: { backgroundColor: Palette.dangerSoft, borderColor: '#F4B7B1' },
-  quiet: { backgroundColor: 'transparent', borderColor: 'transparent' },
-} as const;
-
-const textColors = {
-  primary: '#FFFFFF',
-  secondary: Palette.ink,
-  danger: Palette.danger,
-  quiet: Palette.accent,
-} as const;
-
 export function AppButton({
   label,
   icon,
@@ -47,19 +37,42 @@ export function AppButton({
   fullWidth,
   disabled,
   style,
+  onPress,
   ...props
 }: AppButtonProps) {
+  const { colors } = useAppTheme();
   const isDisabled = disabled || loading;
-  const foreground = textColors[variant];
+
+  const variantStyle = {
+    primary: { backgroundColor: colors.accent, borderColor: colors.accent },
+    secondary: { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+    danger: { backgroundColor: colors.dangerSoft, borderColor: `${colors.danger}59` },
+    quiet: { backgroundColor: 'transparent', borderColor: 'transparent' },
+  }[variant];
+
+  const foreground = {
+    primary: colors.onAccent,
+    secondary: colors.ink,
+    danger: colors.danger,
+    quiet: colors.accent,
+  }[variant];
+
+  const handlePress = (e: GestureResponderEvent) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onPress?.(e);
+  };
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       disabled={isDisabled}
+      onPress={handlePress}
       style={({ pressed, hovered }) => [
         styles.button,
-        variantStyles[variant],
+        variantStyle,
         compact ? styles.compact : null,
         fullWidth ? styles.fullWidth : null,
         hovered && !isDisabled ? styles.hovered : null,

@@ -1,12 +1,23 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/app-button';
 import { FormField } from '@/components/ui/form-field';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
-import { Layout, Palette, Radius } from '@/constants/theme';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAuth } from '@/providers/auth-provider';
 import { useSettings } from '@/providers/settings-provider';
 
@@ -15,8 +26,9 @@ function isValidUrl(value: string) {
 }
 
 export default function SettingsScreen() {
-  const { baseUrl, setBaseUrl } = useSettings();
-  const { userId, accessToken, setCredentials, logout } = useAuth();
+  const { baseUrl, setBaseUrl, isLoaded: settingsLoaded } = useSettings();
+  const { userId, accessToken, isLoaded: authLoaded, setCredentials, logout } = useAuth();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
 
   const [baseUrlInput, setBaseUrlInput] = useState(baseUrl);
@@ -27,6 +39,20 @@ export default function SettingsScreen() {
   const [urlError, setUrlError] = useState('');
   const [identityError, setIdentityError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+
+  // 记录挂载时的初始值，用于异步恢复后仅回填未编辑的字段
+  const initialValues = useRef({ baseUrl, userId, accessToken });
+
+  useEffect(() => {
+    if (!settingsLoaded || !authLoaded) return;
+    const initial = initialValues.current;
+    setBaseUrlInput((cur) => (cur === initial.baseUrl ? baseUrl : cur));
+    setUserIdInput((cur) => (cur === initial.userId ? userId : cur));
+    setAccessTokenInput((cur) => (cur === initial.accessToken ? accessToken : cur));
+  }, [settingsLoaded, authLoaded, baseUrl, userId, accessToken]);
+
+  const serverChanged = baseUrlInput.trim() !== baseUrl;
+  const identityChanged = userIdInput.trim() !== userId || accessTokenInput.trim() !== accessToken;
 
   async function saveServer() {
     const next = baseUrlInput.trim();
@@ -82,141 +108,143 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.screen}
-      contentContainerStyle={[
-        styles.container,
-        { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
-      ]}
-      keyboardShouldPersistTaps="handled">
-      <View style={styles.header}>
-        <Text style={styles.title}>设置</Text>
-        <Text style={styles.subtitle}>管理服务连接和当前访问身份</Text>
-      </View>
-
-      {!!savedMessage && (
-        <View style={styles.successNotice} accessibilityRole="alert">
-          <MaterialIcons name="check-circle" size={19} color={Palette.accent} />
-          <Text style={styles.successText}>{savedMessage}</Text>
+    <KeyboardAvoidingView
+      style={[styles.screen, { backgroundColor: colors.canvas }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 28 },
+        ]}
+        keyboardShouldPersistTaps="handled">
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.ink }]}>设置</Text>
+          <Text style={[styles.subtitle, { color: colors.muted }]}>管理服务连接和当前访问身份</Text>
         </View>
-      )}
 
-      <Surface style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionIcon}>
-            <MaterialIcons name="dns" size={19} color={Palette.accent} />
+        {!!savedMessage && <InlineNotice message={savedMessage} tone="success" />}
+
+        <Surface style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIcon, { backgroundColor: colors.accentSoft }]}>
+              <MaterialIcons name="dns" size={20} color={colors.accent} />
+            </View>
+            <View style={styles.sectionCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>服务连接</Text>
+              <Text style={[styles.sectionHint, { color: colors.muted }]}>当前 API 实例地址</Text>
+            </View>
           </View>
-          <View style={styles.sectionCopy}>
-            <Text style={styles.sectionTitle}>服务连接</Text>
-            <Text style={styles.sectionHint}>当前 API 实例地址</Text>
-          </View>
-        </View>
-        <FormField
-          label="服务器地址"
-          value={baseUrlInput}
-          onChangeText={(value) => {
-            setBaseUrlInput(value);
-            setUrlError('');
-            setSavedMessage('');
-          }}
-          error={urlError}
-          placeholder="https://api.example.com"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="url"
-          returnKeyType="done"
-          onSubmitEditing={() => void saveServer()}
-        />
-        <View style={styles.actionRow}>
-          <AppButton
-            label="保存服务器地址"
-            icon="save"
-            loading={busyAction === 'server'}
-            onPress={() => void saveServer()}
+          <FormField
+            label="服务器地址"
+            value={baseUrlInput}
+            onChangeText={(value) => {
+              setBaseUrlInput(value);
+              setUrlError('');
+              setSavedMessage('');
+            }}
+            error={urlError}
+            placeholder="https://api.example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            returnKeyType="done"
+            onSubmitEditing={() => void saveServer()}
           />
-        </View>
-      </Surface>
+          <View style={styles.actionRow}>
+            <AppButton
+              label="保存服务器地址"
+              icon="save"
+              loading={busyAction === 'server'}
+              disabled={!serverChanged}
+              onPress={() => void saveServer()}
+            />
+          </View>
+        </Surface>
 
-      <Surface style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View style={styles.sectionIcon}>
-            <MaterialIcons name="badge" size={19} color={Palette.accent} />
+        <Surface style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionIcon, { backgroundColor: colors.accentSoft }]}>
+              <MaterialIcons name="badge" size={20} color={colors.accent} />
+            </View>
+            <View style={styles.sectionCopy}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>访问身份</Text>
+              <Text style={[styles.sectionHint, { color: colors.muted }]}>用于请求认证的用户 ID 和令牌</Text>
+            </View>
           </View>
-          <View style={styles.sectionCopy}>
-            <Text style={styles.sectionTitle}>访问身份</Text>
-            <Text style={styles.sectionHint}>用于请求认证的用户 ID 和令牌</Text>
-          </View>
-        </View>
-        <FormField
-          label="用户 ID"
-          value={userIdInput}
-          onChangeText={(value) => {
-            setUserIdInput(value);
-            setIdentityError('');
-            setSavedMessage('');
-          }}
-          placeholder="例如 1001"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <FormField
-          label="系统访问令牌"
-          value={accessTokenInput}
-          onChangeText={(value) => {
-            setAccessTokenInput(value);
-            setIdentityError('');
-            setSavedMessage('');
-          }}
-          error={identityError}
-          placeholder="输入访问令牌"
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry={!showToken}
-          trailing={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={showToken ? '隐藏访问令牌' : '显示访问令牌'}
-              onPress={() => setShowToken((current) => !current)}
-              style={({ pressed }) => [styles.tokenToggle, pressed ? styles.tokenTogglePressed : null]}>
-              <MaterialIcons
-                name={showToken ? 'visibility-off' : 'visibility'}
-                size={20}
-                color={Palette.muted}
-              />
-            </Pressable>
-          }
-        />
-        <View style={styles.actionRow}>
-          <AppButton
-            label="更新访问凭据"
-            icon="save"
-            loading={busyAction === 'identity'}
-            onPress={() => void saveIdentity()}
+          <FormField
+            label="用户 ID"
+            value={userIdInput}
+            onChangeText={(value) => {
+              setUserIdInput(value);
+              setIdentityError('');
+              setSavedMessage('');
+            }}
+            placeholder="例如 1001"
+            autoCapitalize="none"
+            autoCorrect={false}
           />
-        </View>
-      </Surface>
+          <FormField
+            label="系统访问令牌"
+            value={accessTokenInput}
+            onChangeText={(value) => {
+              setAccessTokenInput(value);
+              setIdentityError('');
+              setSavedMessage('');
+            }}
+            error={identityError}
+            placeholder="输入访问令牌"
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry={!showToken}
+            trailing={
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={showToken ? '隐藏访问令牌' : '显示访问令牌'}
+                onPress={() => setShowToken((current) => !current)}
+                style={({ pressed }) => [
+                  styles.tokenToggle,
+                  pressed ? { backgroundColor: colors.surfaceMuted } : null,
+                ]}>
+                <MaterialIcons
+                  name={showToken ? 'visibility-off' : 'visibility'}
+                  size={20}
+                  color={colors.muted}
+                />
+              </Pressable>
+            }
+          />
+          <View style={styles.actionRow}>
+            <AppButton
+              label="更新访问凭据"
+              icon="save"
+              loading={busyAction === 'identity'}
+              disabled={!identityChanged}
+              onPress={() => void saveIdentity()}
+            />
+          </View>
+        </Surface>
 
-      <Surface style={[styles.section, styles.sessionSection]}>
-        <View style={styles.sessionCopy}>
-          <Text style={styles.sectionTitle}>当前会话</Text>
-          <Text style={styles.sectionHint}>退出后需要重新输入访问凭据</Text>
-        </View>
-        <AppButton
-          label="退出登录"
-          icon="logout"
-          variant="danger"
-          loading={busyAction === 'logout'}
-          onPress={confirmLogout}
-        />
-      </Surface>
-    </ScrollView>
+        <Surface style={[styles.section, styles.sessionSection]}>
+          <View style={styles.sessionCopy}>
+            <Text style={[styles.sectionTitle, { color: colors.ink }]}>当前会话</Text>
+            <Text style={[styles.sectionHint, { color: colors.muted }]}>退出后需要重新输入访问凭据</Text>
+          </View>
+          <AppButton
+            label="退出登录"
+            icon="logout"
+            variant="danger"
+            loading={busyAction === 'logout'}
+            onPress={confirmLogout}
+          />
+        </Surface>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: Palette.canvas,
   },
   container: {
     width: '100%',
@@ -230,29 +258,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   title: {
-    color: Palette.ink,
     fontSize: 24,
     lineHeight: 31,
     fontWeight: '800',
   },
   subtitle: {
-    color: Palette.muted,
     fontSize: 13,
     lineHeight: 19,
-  },
-  successNotice: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    borderRadius: Radius.medium,
-    backgroundColor: Palette.accentSoft,
-  },
-  successText: {
-    color: Palette.accentStrong,
-    fontSize: 13,
-    fontWeight: '700',
   },
   section: {
     gap: 16,
@@ -268,19 +280,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.accentSoft,
   },
   sectionCopy: {
     flex: 1,
   },
   sectionTitle: {
-    color: Palette.ink,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '800',
   },
   sectionHint: {
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 17,
   },
@@ -293,9 +302,6 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tokenTogglePressed: {
-    backgroundColor: Palette.surfaceMuted,
   },
   sessionSection: {
     flexDirection: 'row',

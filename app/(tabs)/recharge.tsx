@@ -1,5 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as WebBrowser from 'expo-web-browser';
 import { WebView } from 'react-native-webview';
@@ -11,7 +23,9 @@ import { Surface } from '@/components/ui/surface';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
+import { Layout, Radius, type ToneName } from '@/constants/theme';
 import { useApi } from '@/hooks/use-api';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseTopupInfo, parseTopupRecords, parseUser } from '@/lib/parsers';
 
@@ -30,6 +44,7 @@ function parsePositiveInt(text: string): number | null {
 
 export default function RechargeScreen() {
   const api = useApi();
+  const { colors, shadow } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -408,64 +423,102 @@ export default function RechargeScreen() {
   const pagerInfo = useMemo(() => {
     if (!total) return `第 ${page} 页`;
     const pages = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
-    return `第 ${page} / ${pages} 页，共 ${total} 条`;
+    return `第 ${page} / ${pages} 页 · 共 ${total} 条`;
   }, [page, pageSize, total]);
 
+  // 胶囊选择按钮（支付方式 / 充值数量共用）
+  const renderChip = (label: string, active: boolean, onPress: () => void, disabled = busy) => (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        active
+          ? { backgroundColor: colors.accent, borderColor: colors.accent }
+          : { backgroundColor: colors.surface, borderColor: colors.border },
+        pressed ? styles.chipPressed : null,
+      ]}>
+      <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>{label}</Text>
+    </Pressable>
+  );
+
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={[styles.screen, { backgroundColor: colors.canvas }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <FlatList
         style={styles.list}
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 }]}
+        contentContainerStyle={[
+          styles.container,
+          // 96 为底部悬浮操作区（FloatingPageControls）预留高度，避免遮挡最后一条记录
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 96 },
+        ]}
         data={records}
         keyExtractor={(item) => String(item.id)}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>充值</Text>
+              <Text style={[styles.title, { color: colors.ink }]}>充值</Text>
             </View>
 
             {!!error && <InlineNotice message={error} />}
 
             <View style={styles.summaryRow}>
               <Surface style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>当前余额</Text>
-                <Text style={styles.summaryValue}>{formatOmega(currentBalance)}</Text>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>当前余额</Text>
+                <Text
+                  style={[styles.summaryValue, { color: colors.ink }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
+                  {formatOmega(currentBalance)}
+                </Text>
               </Surface>
               <Surface style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>历史消耗</Text>
-                <Text style={styles.summaryValue}>{formatOmega(historyCost)}</Text>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>历史消耗</Text>
+                <Text
+                  style={[styles.summaryValue, { color: colors.ink }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit>
+                  {formatOmega(historyCost)}
+                </Text>
               </Surface>
             </View>
 
             <Surface style={styles.redeemCard}>
-              <Text style={styles.cardTitle}>兑换码充值</Text>
-              <View style={styles.inlineRow}>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>兑换码充值</Text>
+              <View style={styles.redeemRow}>
                 <TextInput
                   value={redemptionCode}
                   onChangeText={setRedemptionCode}
                   placeholder="请输入兑换码"
+                  placeholderTextColor={colors.subtle}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
+                  style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
                 />
-                <AppButton
-                  label="粘贴"
-                  icon="content-paste"
-                  variant="secondary"
-                  compact
-                  onPress={pasteRedemptionCode}
-                  disabled={redeeming || busy}
-                />
-                <AppButton
-                  label="兑换"
-                  icon="redeem"
-                  compact
-                  loading={redeeming}
-                  onPress={redeem}
-                  disabled={busy}
-                />
+                {/* 窄屏下输入框独占一行，两个按钮在下一行平分 */}
+                <View style={styles.redeemActions}>
+                  <AppButton
+                    label="粘贴"
+                    icon="content-paste"
+                    variant="secondary"
+                    compact
+                    onPress={pasteRedemptionCode}
+                    disabled={redeeming || busy}
+                    style={styles.redeemActionBtn}
+                  />
+                  <AppButton
+                    label="兑换"
+                    icon="redeem"
+                    compact
+                    loading={redeeming}
+                    onPress={redeem}
+                    disabled={busy}
+                    style={styles.redeemActionBtn}
+                  />
+                </View>
               </View>
-              <Text style={styles.hint}>兑换成功后会自动刷新余额与记录</Text>
+              <Text style={[styles.hint, { color: colors.muted }]}>兑换成功后会自动刷新余额与记录</Text>
               {!!topUpLink.trim() && (
                 <AppButton
                   label="购买兑换码"
@@ -480,49 +533,33 @@ export default function RechargeScreen() {
 
             <Surface style={styles.onlineCard}>
               <View style={styles.onlineHeader}>
-                <Text style={styles.cardTitle}>在线充值</Text>
-                <Badge text={canOnlineTopup ? '可用' : '未配置'} color={canOnlineTopup ? '#DCFCE7' : '#FEF3C7'} />
+                <Text style={[styles.cardTitle, { color: colors.ink }]}>在线充值</Text>
+                <Badge text={canOnlineTopup ? '可用' : '未配置'} tone={canOnlineTopup ? 'success' : 'warning'} />
               </View>
 
               {!canOnlineTopup ? (
-                <Text style={styles.hint}>管理员未配置在线充值，仍可使用兑换码充值。</Text>
+                <Text style={[styles.hint, { color: colors.muted }]}>管理员未配置在线充值，仍可使用兑换码充值。</Text>
               ) : (
                 <View style={styles.onlineBody}>
-                  <Text style={styles.label}>支付方式</Text>
+                  <Text style={[styles.label, { color: colors.ink }]}>支付方式</Text>
                   <View style={styles.chipRow}>
-                    {payMethods.map((m) => (
-                      <Pressable
-                        key={m.type}
-                        style={[styles.chip, payWay === m.type ? styles.chipActive : styles.chipIdle]}
-                        onPress={() => {
-                          setPayWay(m.type);
-                          setPayableAmount('');
-                        }}
-                      >
-                        <Text style={[styles.chipText, payWay === m.type ? styles.chipTextActive : styles.chipTextIdle]}>
-                          {m.name}
-                        </Text>
-                      </Pressable>
-                    ))}
+                    {payMethods.map((m) =>
+                      renderChip(m.name, payWay === m.type, () => {
+                        setPayWay(m.type);
+                        setPayableAmount('');
+                      }, busy)
+                    )}
                   </View>
 
-                  <Text style={styles.label}>充值数量</Text>
+                  <Text style={[styles.label, { color: colors.ink }]}>充值数量</Text>
                   <View style={styles.chipRow}>
-                    {presetAmounts.map((v) => (
-                      <Pressable
-                        key={String(v)}
-                        style={[styles.chip, selectedPreset === v ? styles.chipActive : styles.chipIdle]}
-                        onPress={() => {
-                          setSelectedPreset(v);
-                          setTopupAmountText(String(v));
-                          setPayableAmount('');
-                        }}
-                      >
-                        <Text style={[styles.chipText, selectedPreset === v ? styles.chipTextActive : styles.chipTextIdle]}>
-                          {v}
-                        </Text>
-                      </Pressable>
-                    ))}
+                    {presetAmounts.map((v) =>
+                      renderChip(String(v), selectedPreset === v, () => {
+                        setSelectedPreset(v);
+                        setTopupAmountText(String(v));
+                        setPayableAmount('');
+                      })
+                    )}
                   </View>
 
                   <View style={styles.inlineRow}>
@@ -536,7 +573,8 @@ export default function RechargeScreen() {
                       }}
                       keyboardType="numeric"
                       placeholder={`最小 ${minTopup}`}
-                      style={[styles.input, styles.flex1]}
+                      placeholderTextColor={colors.subtle}
+                      style={[styles.input, styles.flex1, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
                     />
                     <AppButton
                       label="计算"
@@ -550,12 +588,12 @@ export default function RechargeScreen() {
                   </View>
 
                   <View style={styles.kvRow}>
-                    <Text style={styles.k}>预计支付</Text>
-                    <Text style={styles.v}>{payableAmount || '—'}</Text>
+                    <Text style={[styles.k, { color: colors.muted }]}>预计支付</Text>
+                    <Text style={[styles.v, { color: colors.ink }]}>{payableAmount || '—'}</Text>
                   </View>
                   <View style={styles.kvRow}>
-                    <Text style={styles.k}>折扣</Text>
-                    <Text style={styles.v}>
+                    <Text style={[styles.k, { color: colors.muted }]}>折扣</Text>
+                    <Text style={[styles.v, { color: colors.ink }]}>
                       {(() => {
                         const n = Number(topupAmountText.trim());
                         const d = topupInfo?.discount?.[String(n)] ?? 1;
@@ -578,25 +616,30 @@ export default function RechargeScreen() {
 
             {canCreemTopup && (
               <Surface style={styles.creemCard}>
-                <Text style={styles.cardTitle}>Creem 充值</Text>
-                <Text style={styles.hint}>请选择产品后跳转支付</Text>
+                <Text style={[styles.cardTitle, { color: colors.ink }]}>Creem 充值</Text>
+                <Text style={[styles.hint, { color: colors.muted }]}>请选择产品后跳转支付</Text>
                 <View style={styles.creemList}>
                   {(topupInfo?.creemProducts ?? []).slice(0, 8).map((p) => (
                     <Pressable
                       key={p.productId}
-                      style={styles.creemItem}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [
+                        styles.creemItem,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        pressed ? styles.creemItemPressed : null,
+                      ]}
                       onPress={() => startCreemPay(p.productId)}
                       disabled={busy || paying}
                     >
                       <View style={styles.creemLeft}>
-                        <Text style={styles.creemName} numberOfLines={1}>
+                        <Text style={[styles.creemName, { color: colors.ink }]} numberOfLines={1}>
                           {p.name}
                         </Text>
-                        <Text style={styles.hint} numberOfLines={1}>
+                        <Text style={[styles.hint, { color: colors.muted }]} numberOfLines={1}>
                           额度：{p.quota ?? '—'}
                         </Text>
                       </View>
-                      <Text style={styles.creemPrice}>
+                      <Text style={[styles.creemPrice, { color: colors.ink }]}>
                         {p.currency === 'EUR' ? '€' : '$'}
                         {p.price}
                       </Text>
@@ -607,13 +650,14 @@ export default function RechargeScreen() {
             )}
 
             <Surface style={styles.pagerCard}>
-              <Text style={styles.cardTitle}>充值记录</Text>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>充值记录</Text>
               <View style={styles.inlineRow}>
                 <TextInput
                   value={keyword}
                   onChangeText={setKeyword}
                   placeholder="关键字（订单号/渠道）"
-                  style={[styles.input, styles.flex1]}
+                  placeholderTextColor={colors.subtle}
+                  style={[styles.input, styles.flex1, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
                 />
                 <AppButton
                   label="搜索"
@@ -624,33 +668,36 @@ export default function RechargeScreen() {
                   disabled={busy}
                 />
               </View>
-              <Text style={styles.pagerInfo}>{pagerInfo}</Text>
+              <Text style={[styles.pagerInfo, { color: colors.muted }]}>{pagerInfo}</Text>
             </Surface>
           </View>
         }
-        renderItem={({ item }) => (
-          <Surface style={styles.item}>
-            <View style={styles.itemTop}>
-              <Text style={styles.name}>{item.name || `记录 #${item.id}`}</Text>
-              <Badge
-                text={item.status === 1 ? '已完成' : item.status === 0 ? '未完成' : `状态 ${item.status ?? '—'}`}
-                color={item.status === 1 ? '#DCFCE7' : '#FEF3C7'}
-              />
-            </View>
-            <View style={styles.kvRow}>
-              <Text style={styles.k}>额度</Text>
-              <Text style={styles.v}>{formatOmega(item.quota)}</Text>
-            </View>
-            <View style={styles.kvRow}>
-              <Text style={styles.k}>创建</Text>
-              <Text style={styles.v}>{formatDateTimeEpochSeconds(item.created)}</Text>
-            </View>
-            <View style={styles.kvRow}>
-              <Text style={styles.k}>兑换</Text>
-              <Text style={styles.v}>{formatDateTimeEpochSeconds(item.redeemed)}</Text>
-            </View>
-          </Surface>
-        )}
+        renderItem={({ item }) => {
+          const statusTone: ToneName = item.status === 1 ? 'success' : item.status === 0 ? 'warning' : 'neutral';
+          const statusLabel = item.status === 1 ? '已完成' : item.status === 0 ? '未完成' : '未知状态';
+          return (
+            <Surface style={styles.item}>
+              <View style={styles.itemTop}>
+                <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1}>
+                  {item.name || `记录 #${item.id}`}
+                </Text>
+                <Badge text={statusLabel} tone={statusTone} />
+              </View>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>额度</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatOmega(item.quota)}</Text>
+              </View>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>创建</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatDateTimeEpochSeconds(item.created)}</Text>
+              </View>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>兑换</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatDateTimeEpochSeconds(item.redeemed)}</Text>
+              </View>
+            </Surface>
+          );
+        }}
         ListEmptyComponent={
           <EmptyState title="暂无充值记录" description="完成充值后，交易记录会显示在这里。" icon="payments" />
         }
@@ -667,43 +714,58 @@ export default function RechargeScreen() {
       />
 
       <Modal visible={webPayOpen} transparent animationType="fade" onRequestClose={() => setWebPayOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>支付</Text>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }, shadow ?? null]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>支付</Text>
               <Pressable
-                style={styles.modalClose}
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  styles.modalClose,
+                  { backgroundColor: colors.accent },
+                  pressed ? styles.modalClosePressed : null,
+                ]}
                 onPress={() => {
                   setWebPayOpen(false);
                   setWebPayHtml('');
                   void load(1);
                 }}
               >
-                <Text style={styles.modalCloseText}>关闭</Text>
+                <Text style={[styles.modalCloseText, { color: colors.onAccent }]}>关闭</Text>
               </Pressable>
             </View>
-            <WebView originWhitelist={['*']} source={{ html: webPayHtml }} />
+            <View style={styles.webWrap}>
+              <WebView
+                originWhitelist={['*']}
+                source={{ html: webPayHtml }}
+                startInLoadingState
+                renderLoading={() => (
+                  <View style={styles.webLoading}>
+                    <ActivityIndicator color={colors.accent} />
+                  </View>
+                )}
+              />
+            </View>
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F3F6F5',
   },
   list: {
     flex: 1,
   },
   container: {
     width: '100%',
-    maxWidth: 1180,
+    maxWidth: Layout.contentMaxWidth,
     alignSelf: 'center',
-    padding: 16,
-    gap: 16,
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
   },
   header: {
     gap: 12,
@@ -718,11 +780,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#15211F',
-  },
-  errorText: {
-    color: '#B42318',
-    fontWeight: '600',
   },
   summaryRow: {
     flexDirection: 'row',
@@ -734,28 +791,24 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
-    color: '#63716E',
     fontWeight: '700',
   },
   summaryValue: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#15211F',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   cardTitle: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#15211F',
+    fontWeight: '700',
   },
   hint: {
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '600',
   },
   label: {
-    color: '#15211F',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   inlineRow: {
     flexDirection: 'row',
@@ -770,49 +823,20 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
-    color: '#15211F',
   },
-  primaryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#0B6B5C',
-    alignSelf: 'flex-start',
+  redeemRow: {
+    flexDirection: 'column',
+    gap: 10,
   },
-  primaryText: {
-    color: '#fff',
-    fontWeight: '900',
+  redeemActions: {
+    flexDirection: 'row',
+    gap: 10,
   },
-  ghostBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#63716E',
-    alignSelf: 'flex-start',
-  },
-  ghostText: {
-    color: '#fff',
-    fontWeight: '900',
-  },
-  buyBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#2563EB',
-    alignSelf: 'flex-start',
-  },
-  buyText: {
-    color: '#fff',
-    fontWeight: '900',
-  },
-  payBtn: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
+  redeemActionBtn: {
+    flex: 1,
   },
   redeemCard: {
     gap: 10,
@@ -837,26 +861,15 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  chipIdle: {
-    backgroundColor: '#fff',
-    borderColor: '#D8E1DE',
-  },
-  chipActive: {
-    backgroundColor: '#0B6B5C',
-    borderColor: '#0B6B5C',
+  chipPressed: {
+    opacity: 0.7,
   },
   chipText: {
     fontSize: 12,
-    fontWeight: '900',
-  },
-  chipTextIdle: {
-    color: '#15211F',
-  },
-  chipTextActive: {
-    color: '#fff',
+    fontWeight: '600',
   },
   kvRow: {
     flexDirection: 'row',
@@ -865,16 +878,15 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   k: {
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   v: {
-    color: '#15211F',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '600',
     flex: 1,
     textAlign: 'right',
+    fontVariant: ['tabular-nums'],
   },
   creemCard: {
     gap: 10,
@@ -888,32 +900,30 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 12,
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
+  },
+  creemItemPressed: {
+    opacity: 0.7,
   },
   creemLeft: {
     flex: 1,
     gap: 4,
   },
   creemName: {
-    color: '#15211F',
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
   },
   creemPrice: {
-    color: '#15211F',
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   pagerCard: {
     gap: 10,
   },
   pagerInfo: {
-    flex: 1,
     textAlign: 'center',
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
@@ -929,24 +939,16 @@ const styles = StyleSheet.create({
   name: {
     flex: 1,
     fontSize: 14,
-    fontWeight: '900',
-    color: '#15211F',
-  },
-  empty: {
-    paddingTop: 16,
-    color: '#63716E',
-    textAlign: 'center',
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
-    padding: 16,
+    padding: Layout.pagePadding,
   },
   modalCard: {
-    maxHeight: '85%',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    height: '85%',
+    borderRadius: Radius.medium,
     overflow: 'hidden',
   },
   modalHeader: {
@@ -956,21 +958,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#D8E1DE',
   },
   modalTitle: {
     fontSize: 14,
-    fontWeight: '900',
-    color: '#15211F',
+    fontWeight: '700',
   },
   modalClose: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#0B6B5C',
+    borderRadius: Radius.medium,
+  },
+  modalClosePressed: {
+    opacity: 0.7,
   },
   modalCloseText: {
-    color: '#fff',
-    fontWeight: '900',
+    fontWeight: '700',
+  },
+  webWrap: {
+    flex: 1,
+  },
+  webLoading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

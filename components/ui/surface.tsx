@@ -1,19 +1,28 @@
 import React from 'react';
 import { StyleSheet, View, ViewProps } from 'react-native';
 
-import { Palette, Radius, Shadows } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export function Surface({ style, ...props }: ViewProps) {
-  return <View {...props} style={[styles.card, style]} />;
+  const { colors, shadow } = useAppTheme();
+  return (
+    <View
+      {...props}
+      style={[
+        styles.card,
+        { backgroundColor: colors.surface, borderColor: colors.border },
+        shadow ?? null,
+        style,
+      ]}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Palette.surface,
     borderRadius: Radius.medium,
     padding: 16,
     borderWidth: 1,
-    borderColor: Palette.border,
-    ...(Shadows ?? {}),
   },
 });

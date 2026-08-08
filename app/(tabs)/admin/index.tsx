@@ -1,10 +1,13 @@
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Layout, Palette, Radius, Shadows } from '@/constants/theme';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Surface } from '@/components/ui/surface';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useMe } from '@/providers/me-provider';
 
 type Destination = {
@@ -38,55 +41,75 @@ const destinations: Destination[] = [
   },
 ];
 
+function AdminMenuRow({ item }: { item: Destination }) {
+  const router = useRouter();
+  const { colors } = useAppTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`进入${item.title}管理`}
+      onPress={() => router.push(item.route)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => (pressed ? styles.menuItemPressed : null)}>
+      <Surface
+        style={[
+          styles.menuRowInner,
+          hovered ? { backgroundColor: colors.surfaceMuted, borderColor: colors.borderStrong } : null,
+        ]}>
+        <View style={[styles.menuIcon, { backgroundColor: colors.accentSoft }]}>
+          <MaterialIcons name={item.icon} size={22} color={colors.accent} />
+        </View>
+        <View style={styles.menuCopy}>
+          <Text style={[styles.menuTitle, { color: colors.ink }]} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={[styles.menuDescription, { color: colors.muted }]} numberOfLines={1}>
+            {item.description}
+          </Text>
+        </View>
+        <MaterialIcons name="chevron-right" size={24} color={colors.subtle} />
+      </Surface>
+    </Pressable>
+  );
+}
+
 export default function AdminHomeScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { me, isAdmin, isRoot } = useMe();
+  const { me, isAdmin, isRoot, isLoaded } = useMe();
+  const { colors } = useAppTheme();
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, { backgroundColor: colors.canvas }]}
       contentContainerStyle={[
         styles.container,
         { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
       ]}>
       <View style={styles.header}>
-        <Text style={styles.title}>管理</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: colors.ink }]}>管理</Text>
+        <Text style={[styles.subtitle, { color: colors.muted }]} numberOfLines={1}>
           {isAdmin ? `${me?.username ?? '管理员'} · ${isRoot ? 'Root' : 'Admin'}` : '管理权限'}
         </Text>
       </View>
 
-      {!isAdmin ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIcon}>
-            <MaterialIcons name="lock-outline" size={24} color={Palette.muted} />
-          </View>
-          <Text style={styles.emptyTitle}>当前账号无管理员权限</Text>
-          <Text style={styles.emptyText}>请切换到管理员账号后再访问此区域。</Text>
+      {!isLoaded ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={[styles.loadingText, { color: colors.muted }]}>加载中</Text>
         </View>
+      ) : !isAdmin ? (
+        <EmptyState
+          icon="lock-outline"
+          title="当前账号无管理员权限"
+          description="请切换到管理员账号后再访问此区域。"
+        />
       ) : (
         <View style={styles.menu}>
           {destinations.map((item) => (
-            <Pressable
-              key={item.route}
-              accessibilityRole="button"
-              accessibilityLabel={`进入${item.title}管理`}
-              onPress={() => router.push(item.route)}
-              style={({ pressed, hovered }) => [
-                styles.menuItem,
-                hovered ? styles.menuItemHovered : null,
-                pressed ? styles.menuItemPressed : null,
-              ]}>
-              <View style={styles.menuIcon}>
-                <MaterialIcons name={item.icon} size={22} color={Palette.accent} />
-              </View>
-              <View style={styles.menuCopy}>
-                <Text style={styles.menuTitle}>{item.title}</Text>
-                <Text style={styles.menuDescription}>{item.description}</Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={24} color={Palette.subtle} />
-            </Pressable>
+            <AdminMenuRow key={item.route} item={item} />
           ))}
         </View>
       )}
@@ -97,49 +120,34 @@ export default function AdminHomeScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: Palette.canvas,
   },
   container: {
     width: '100%',
     maxWidth: Layout.contentMaxWidth,
     alignSelf: 'center',
     padding: Layout.pagePadding,
-    gap: 20,
+    gap: Layout.sectionGap,
   },
   header: {
     gap: 4,
   },
   title: {
-    color: Palette.ink,
     fontSize: 24,
     lineHeight: 31,
     fontWeight: '800',
   },
   subtitle: {
-    color: Palette.muted,
     fontSize: 13,
     lineHeight: 19,
-    fontWeight: '600',
+    flexShrink: 1,
   },
   menu: {
     gap: 10,
   },
-  menuItem: {
-    minHeight: 78,
+  menuRowInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: Radius.medium,
-    borderWidth: 1,
-    borderColor: Palette.border,
-    backgroundColor: Palette.surface,
-    ...(Shadows ?? {}),
-  },
-  menuItemHovered: {
-    borderColor: Palette.borderStrong,
-    backgroundColor: '#FBFDFC',
   },
   menuItemPressed: {
     opacity: 0.84,
@@ -151,7 +159,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.accentSoft,
   },
   menuCopy: {
     minWidth: 0,
@@ -159,48 +166,22 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   menuTitle: {
-    color: Palette.ink,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '800',
   },
   menuDescription: {
-    color: Palette.muted,
     fontSize: 13,
     lineHeight: 18,
   },
-  emptyState: {
+  loading: {
     minHeight: 260,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    padding: 24,
-    borderRadius: Radius.medium,
-    borderWidth: 1,
-    borderColor: Palette.border,
-    backgroundColor: Palette.surface,
   },
-  emptyIcon: {
-    width: 52,
-    height: 52,
-    marginBottom: 4,
-    borderRadius: Radius.medium,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Palette.surfaceMuted,
-  },
-  emptyTitle: {
-    color: Palette.ink,
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  emptyText: {
-    maxWidth: 360,
-    color: Palette.muted,
+  loadingText: {
     fontSize: 13,
     lineHeight: 19,
-    textAlign: 'center',
   },
 });

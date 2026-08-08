@@ -5,10 +5,12 @@ import { AppButton } from '@/components/ui/app-button';
 export function FloatingRefreshButton({
   onPress,
   disabled,
+  loading,
   label,
 }: {
   onPress: () => void;
   disabled?: boolean;
+  loading?: boolean;
   label?: string;
 }) {
   return (
@@ -17,7 +19,8 @@ export function FloatingRefreshButton({
       icon="refresh"
       variant="secondary"
       compact
-      loading={disabled}
+      loading={loading}
+      disabled={disabled}
       onPress={onPress}
     />
   );

@@ -2,7 +2,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Palette, Radius } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export function EmptyState({
   title,
@@ -13,13 +14,20 @@ export function EmptyState({
   description?: string;
   icon?: React.ComponentProps<typeof MaterialIcons>['name'];
 }) {
+  const { colors } = useAppTheme();
   return (
-    <View style={styles.container}>
-      <View style={styles.icon}>
-        <MaterialIcons name={icon} size={23} color={Palette.muted} />
+    <View
+      style={[
+        styles.container,
+        { borderColor: colors.border, backgroundColor: colors.surface },
+      ]}>
+      <View style={[styles.icon, { backgroundColor: colors.surfaceMuted }]}>
+        <MaterialIcons name={icon} size={23} color={colors.muted} />
       </View>
-      <Text style={styles.title}>{title}</Text>
-      {!!description && <Text style={styles.description}>{description}</Text>}
+      <Text style={[styles.title, { color: colors.ink }]}>{title}</Text>
+      {!!description && (
+        <Text style={[styles.description, { color: colors.muted }]}>{description}</Text>
+      )}
     </View>
   );
 }
@@ -33,8 +41,6 @@ const styles = StyleSheet.create({
     padding: 24,
     borderRadius: Radius.medium,
     borderWidth: 1,
-    borderColor: Palette.border,
-    backgroundColor: Palette.surface,
   },
   icon: {
     width: 46,
@@ -43,10 +49,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.surfaceMuted,
   },
   title: {
-    color: Palette.ink,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '800',
@@ -54,7 +58,6 @@ const styles = StyleSheet.create({
   },
   description: {
     maxWidth: 360,
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 18,
     textAlign: 'center',

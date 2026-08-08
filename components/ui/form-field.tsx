@@ -1,7 +1,8 @@
 import React, { forwardRef, type ReactNode } from 'react';
 import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { Layout, Palette, Radius } from '@/constants/theme';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 export type FormFieldProps = TextInputProps & {
   label: string;
@@ -14,21 +15,29 @@ export const FormField = forwardRef<TextInput, FormFieldProps>(function FormFiel
   { label, hint, error, trailing, style, ...props },
   ref
 ) {
+  const { colors } = useAppTheme();
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputShell, error ? styles.inputError : null]}>
+      <Text style={[styles.label, { color: colors.inkSoft }]}>{label}</Text>
+      <View
+        style={[
+          styles.inputShell,
+          {
+            borderColor: error ? colors.danger : colors.borderStrong,
+            backgroundColor: colors.surface,
+          },
+        ]}>
         <TextInput
           ref={ref}
-          placeholderTextColor={Palette.subtle}
-          selectionColor={Palette.accent}
-          style={[styles.input, style]}
+          placeholderTextColor={colors.subtle}
+          selectionColor={colors.accent}
+          style={[styles.input, { color: colors.ink }, style]}
           {...props}
         />
         {trailing}
       </View>
-      {!!error && <Text style={styles.error}>{error}</Text>}
-      {!error && !!hint && <Text style={styles.hint}>{hint}</Text>}
+      {!!error && <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>}
+      {!error && !!hint && <Text style={[styles.hint, { color: colors.muted }]}>{hint}</Text>}
     </View>
   );
 });
@@ -38,7 +47,6 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   label: {
-    color: Palette.inkSoft,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
@@ -48,30 +56,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: Palette.borderStrong,
     borderRadius: Radius.medium,
-    backgroundColor: Palette.surface,
     overflow: 'hidden',
-  },
-  inputError: {
-    borderColor: Palette.danger,
   },
   input: {
     minWidth: 0,
     flex: 1,
     paddingHorizontal: 13,
     paddingVertical: 11,
-    color: Palette.ink,
     fontSize: 15,
     lineHeight: 20,
   },
   hint: {
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 17,
   },
   error: {
-    color: Palette.danger,
     fontSize: 12,
     lineHeight: 17,
     fontWeight: '600',

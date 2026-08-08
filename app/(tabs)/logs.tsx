@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,8 +21,9 @@ import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
+import { Fonts, Layout, Radius } from '@/constants/theme';
 import { useApi } from '@/hooks/use-api';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatCount, formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseLogs, parseLogStat } from '@/lib/parsers';
 import { unwrapApiData } from '@/lib/unwrap';
@@ -73,7 +75,7 @@ function logTypeLabel(type?: number) {
 
 export default function LogsScreen() {
   const api = useApi();
-  const colorScheme = useColorScheme();
+  const { colors, shadow } = useAppTheme();
   const insets = useSafeAreaInsets();
   const { isAdmin } = useMe();
 
@@ -96,13 +98,11 @@ export default function LogsScreen() {
   const [detailsLog, setDetailsLog] = useState<(typeof logs)[number] | null>(null);
   const [error, setError] = useState('');
 
-  const inputStyle = useMemo(
-    () => [
-      styles.input,
-      colorScheme === 'dark' ? styles.inputDark : styles.inputLight,
-    ],
-    [colorScheme]
-  );
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+  }, []);
 
   const queryParams = useMemo(() => {
     const startNum = startTs.trim() ? Number(startTs.trim()) : undefined;
@@ -208,119 +208,140 @@ export default function LogsScreen() {
     void fetchGroups();
   }, [fetchGroups]);
 
+  const copyHandler = useCallback(async () => {
+    const content = [
+      `时间：${formatDateTimeEpochSeconds(detailsLog?.createdAt)}`,
+      `类型：${logTypeLabel(detailsLog?.type)}`,
+      detailsLog?.username ? `用户：${detailsLog.username}` : '',
+      detailsLog?.channel !== undefined ? `渠道：${detailsLog.channel}` : '',
+      detailsLog?.modelName ? `模型：${detailsLog.modelName}` : '',
+      detailsLog?.tokenName ? `令牌：${detailsLog.tokenName}` : '',
+      detailsLog?.group ? `分组：${detailsLog.group}` : '',
+      `消耗：${formatOmega(detailsLog?.quota)}`,
+      `Tokens：${(detailsLog?.promptTokens ?? 0) + (detailsLog?.completionTokens ?? 0)}`,
+      detailsLog?.useTime ? `用时：${detailsLog.useTime}s` : '',
+      detailsLog?.ip ? `IP：${detailsLog.ip}` : '',
+      '',
+      '内容：',
+      detailsLog?.content || '',
+      '',
+      'Other：',
+      (() => {
+        const parsed = safeParseJson(detailsLog?.other);
+        if (parsed && typeof parsed === 'object') return JSON.stringify(parsed, null, 2);
+        return detailsLog?.other || '';
+      })(),
+    ]
+      .filter(Boolean)
+      .join('\n');
+    await Clipboard.setStringAsync(content);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    setCopied(true);
+    copyTimer.current = setTimeout(() => setCopied(false), 1500);
+  }, [detailsLog]);
+
+  // 胶囊筛选按钮（类型 / 时间范围 / 每页条数共用）
+  const renderChip = (label: string, active: boolean, onPress: () => void, disabled = busy) => (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.chip,
+        active
+          ? { backgroundColor: colors.accent, borderColor: colors.accent }
+          : { backgroundColor: colors.surface, borderColor: colors.border },
+        pressed ? styles.chipPressed : null,
+      ]}>
+      <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>{label}</Text>
+    </Pressable>
+  );
+
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={[styles.screen, { backgroundColor: colors.canvas }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Modal transparent visible={detailsOpen} animationType="fade" onRequestClose={() => setDetailsOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>日志详情</Text>
+        <View style={[styles.modalBackdrop, { backgroundColor: colors.overlay }]}>
+          <View style={[styles.modalCard, { backgroundColor: colors.surface }, shadow ?? null]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>日志详情</Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable
-                  style={[styles.modalClose, styles.modalCopy]}
-                  onPress={async () => {
-                    const content = [
-                      `时间：${formatDateTimeEpochSeconds(detailsLog?.createdAt)}`,
-                      `类型：${logTypeLabel(detailsLog?.type)}`,
-                      detailsLog?.username ? `用户：${detailsLog.username}` : '',
-                      detailsLog?.channel !== undefined ? `渠道：${detailsLog.channel}` : '',
-                      detailsLog?.modelName ? `模型：${detailsLog.modelName}` : '',
-                      detailsLog?.tokenName ? `令牌：${detailsLog.tokenName}` : '',
-                      detailsLog?.group ? `分组：${detailsLog.group}` : '',
-                      `消耗：${formatOmega(detailsLog?.quota)}`,
-                      `Tokens：${(detailsLog?.promptTokens ?? 0) + (detailsLog?.completionTokens ?? 0)}`,
-                      detailsLog?.useTime ? `用时：${detailsLog.useTime}s` : '',
-                      detailsLog?.ip ? `IP：${detailsLog.ip}` : '',
-                      '',
-                      '内容：',
-                      detailsLog?.content || '',
-                      '',
-                      'Other：',
-                      (() => {
-                        const parsed = safeParseJson(detailsLog?.other);
-                        if (parsed && typeof parsed === 'object') return JSON.stringify(parsed, null, 2);
-                        return detailsLog?.other || '';
-                      })(),
-                    ]
-                      .filter(Boolean)
-                      .join('\n');
-                    await Clipboard.setStringAsync(content);
-                    Alert.alert('已复制', '已复制详情到剪贴板');
-                  }}>
-                  <Text style={styles.modalCloseText}>复制</Text>
-                </Pressable>
-                <Pressable style={styles.modalClose} onPress={() => setDetailsOpen(false)}>
-                  <Text style={styles.modalCloseText}>关闭</Text>
-                </Pressable>
+                <AppButton
+                  label={copied ? '已复制' : '复制'}
+                  icon={copied ? 'check' : 'content-copy'}
+                  compact
+                  onPress={copyHandler}
+                  style={{ backgroundColor: colors.info, borderColor: colors.info }}
+                />
+                <AppButton label="关闭" icon="close" variant="secondary" compact onPress={() => setDetailsOpen(false)} />
               </View>
             </View>
             <ScrollView contentContainerStyle={styles.modalBody}>
               <View style={styles.kvRow}>
-                <Text style={styles.k}>时间</Text>
-                <Text style={styles.v}>{formatDateTimeEpochSeconds(detailsLog?.createdAt)}</Text>
+                <Text style={[styles.k, { color: colors.muted }]}>时间</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatDateTimeEpochSeconds(detailsLog?.createdAt)}</Text>
               </View>
               <View style={styles.kvRow}>
-                <Text style={styles.k}>类型</Text>
-                <Text style={styles.v}>{logTypeLabel(detailsLog?.type)}</Text>
+                <Text style={[styles.k, { color: colors.muted }]}>类型</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{logTypeLabel(detailsLog?.type)}</Text>
               </View>
               {!!detailsLog?.username && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>用户</Text>
-                  <Text style={styles.v}>{detailsLog.username}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>用户</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.username}</Text>
                 </View>
               )}
               {detailsLog?.channel !== undefined && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>渠道</Text>
-                  <Text style={styles.v}>{detailsLog.channel}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>渠道</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.channel}</Text>
                 </View>
               )}
               {!!detailsLog?.modelName && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>模型</Text>
-                  <Text style={styles.v}>{detailsLog.modelName}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>模型</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.modelName}</Text>
                 </View>
               )}
               {!!detailsLog?.tokenName && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>令牌</Text>
-                  <Text style={styles.v}>{detailsLog.tokenName}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>令牌</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.tokenName}</Text>
                 </View>
               )}
               {!!detailsLog?.group && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>分组</Text>
-                  <Text style={styles.v}>{detailsLog.group}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>分组</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.group}</Text>
                 </View>
               )}
               <View style={styles.kvRow}>
-                <Text style={styles.k}>消耗</Text>
-                <Text style={styles.v}>{formatOmega(detailsLog?.quota)}</Text>
+                <Text style={[styles.k, { color: colors.muted }]}>消耗</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatOmega(detailsLog?.quota)}</Text>
               </View>
               <View style={styles.kvRow}>
-                <Text style={styles.k}>Tokens</Text>
-                <Text style={styles.v}>
+                <Text style={[styles.k, { color: colors.muted }]}>Tokens</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>
                   {formatCount((detailsLog?.promptTokens ?? 0) + (detailsLog?.completionTokens ?? 0))}
                 </Text>
               </View>
               <View style={styles.kvRow}>
-                <Text style={styles.k}>用时</Text>
-                <Text style={styles.v}>{detailsLog?.useTime ? `${detailsLog.useTime}s` : '—'}</Text>
+                <Text style={[styles.k, { color: colors.muted }]}>用时</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{detailsLog?.useTime ? `${detailsLog.useTime}s` : '—'}</Text>
               </View>
               {!!detailsLog?.ip && (
                 <View style={styles.kvRow}>
-                  <Text style={styles.k}>IP</Text>
-                  <Text style={styles.v}>{detailsLog.ip}</Text>
+                  <Text style={[styles.k, { color: colors.muted }]}>IP</Text>
+                  <Text style={[styles.v, { color: colors.ink }]}>{detailsLog.ip}</Text>
                 </View>
               )}
 
-              <Text style={styles.modalSection}>内容</Text>
-              <Text selectable style={styles.mono}>
+              <Text style={[styles.modalSection, { color: colors.ink }]}>内容</Text>
+              <Text selectable style={[styles.mono, { color: colors.ink }]}>
                 {detailsLog?.content || '—'}
               </Text>
 
-              <Text style={styles.modalSection}>Other</Text>
-              <Text selectable style={styles.mono}>
+              <Text style={[styles.modalSection, { color: colors.ink }]}>Other</Text>
+              <Text selectable style={[styles.mono, { color: colors.ink }]}>
                 {(() => {
                   const parsed = safeParseJson(detailsLog?.other);
                   if (parsed && typeof parsed === 'object') return `${JSON.stringify(parsed, null, 2)}\n`;
@@ -339,49 +360,37 @@ export default function LogsScreen() {
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
         ]}
         data={logs}
-        keyExtractor={(item, index) => `${item.createdAt ?? 't'}-${item.id}-${index}`}
+        keyExtractor={(item) => String(item.id)}
+        keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>日志</Text>
+            <Text style={[styles.title, { color: colors.ink }]}>日志</Text>
 
             {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.filterCard}>
-              <Text style={styles.cardTitle}>筛选</Text>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>筛选</Text>
               <View style={styles.chipRow}>
-                {[0, 2, 1, 5, 3, 4].map((t) => {
-                  const active = logType === t;
-                  return (
-                    <Pressable
-                      key={t}
-                      style={[styles.chip, active ? styles.chipActive : styles.chipIdle]}
-                      onPress={() => setLogType(t)}
-                      disabled={busy}>
-                      <Text style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextIdle]}>
-                        {logTypeLabel(t)}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+                {[0, 2, 1, 5, 3, 4].map((t) => renderChip(logTypeLabel(t), logType === t, () => setLogType(t)))}
               </View>
 
               <TextInput
                 value={tokenName}
                 onChangeText={setTokenName}
                 placeholder="令牌名 token_name（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
+                placeholderTextColor={colors.subtle}
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={inputStyle}
+                style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
               />
               <TextInput
                 value={modelName}
                 onChangeText={setModelName}
                 placeholder="模型名 model_name（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
+                placeholderTextColor={colors.subtle}
                 autoCapitalize="none"
                 autoCorrect={false}
-                style={inputStyle}
+                style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
               />
               <DropdownSelect
                 title="选择分组"
@@ -389,9 +398,8 @@ export default function LogsScreen() {
                 onChange={setGroup}
                 options={groupOptions}
                 placeholder="分组（可选）"
-                placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#8A9894'}
-                style={inputStyle}
-                textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#15211F' }}
+                style={styles.input}
+                textStyle={{ color: colors.ink }}
               />
 
               <View style={styles.timeRow}>
@@ -399,37 +407,35 @@ export default function LogsScreen() {
                   value={startTs}
                   onChangeText={setStartTs}
                   placeholder="start_timestamp（秒）"
+                  placeholderTextColor={colors.subtle}
                   keyboardType="numeric"
-                  style={[inputStyle, styles.timeInput]}
+                  style={[
+                    styles.input,
+                    styles.timeInput,
+                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                  ]}
                 />
                 <TextInput
                   value={endTs}
                   onChangeText={setEndTs}
                   placeholder="end_timestamp（秒）"
+                  placeholderTextColor={colors.subtle}
                   keyboardType="numeric"
-                  style={[inputStyle, styles.timeInput]}
+                  style={[
+                    styles.input,
+                    styles.timeInput,
+                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                  ]}
                 />
               </View>
               <View style={styles.chipRow}>
-                <Pressable style={[styles.chip, styles.chipIdle]} onPress={applyToday} disabled={busy}>
-                  <Text style={[styles.chipText, styles.chipTextIdle]}>今天</Text>
-                </Pressable>
-                <Pressable style={[styles.chip, styles.chipIdle]} onPress={() => applyRange(7)} disabled={busy}>
-                  <Text style={[styles.chipText, styles.chipTextIdle]}>7天</Text>
-                </Pressable>
-                <Pressable style={[styles.chip, styles.chipIdle]} onPress={() => applyRange(30)} disabled={busy}>
-                  <Text style={[styles.chipText, styles.chipTextIdle]}>30天</Text>
-                </Pressable>
+                {renderChip('今天', false, applyToday)}
+                {renderChip('7天', false, () => applyRange(7))}
+                {renderChip('30天', false, () => applyRange(30))}
               </View>
 
               <View style={styles.inlineRow}>
-                <AppButton
-                  label="查询"
-                  icon="search"
-                  compact
-                  loading={busy}
-                  onPress={() => load(1)}
-                />
+                <AppButton label="查询" icon="search" compact loading={busy} onPress={() => load(1)} />
                 <AppButton
                   label="重置"
                   icon="restart-alt"
@@ -450,49 +456,38 @@ export default function LogsScreen() {
             </Surface>
 
             <Surface style={styles.statCard}>
-              <Text style={styles.cardTitle}>统计</Text>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>统计</Text>
               <View style={styles.statRow}>
-                <Text style={styles.statKey}>消耗</Text>
-                <Text style={styles.statVal}>{formatOmega(stat.quota)}</Text>
+                <Text style={[styles.statKey, { color: colors.muted }]}>消耗</Text>
+                <Text style={[styles.statVal, { color: colors.ink }]}>{formatOmega(stat.quota)}</Text>
               </View>
               <View style={styles.statRow}>
-                <Text style={styles.statKey}>RPM</Text>
-                <Text style={styles.statVal}>{formatCount(stat.rpm)}</Text>
+                <Text style={[styles.statKey, { color: colors.muted }]}>RPM</Text>
+                <Text style={[styles.statVal, { color: colors.ink }]}>{formatCount(stat.rpm)}</Text>
               </View>
               <View style={styles.statRow}>
-                <Text style={styles.statKey}>TPM</Text>
-                <Text style={styles.statVal}>{formatCount(stat.tpm)}</Text>
+                <Text style={[styles.statKey, { color: colors.muted }]}>TPM</Text>
+                <Text style={[styles.statVal, { color: colors.ink }]}>{formatCount(stat.tpm)}</Text>
               </View>
             </Surface>
 
             <Surface style={styles.pagerCard}>
-              <Text style={styles.cardTitle}>分页</Text>
-              <View style={styles.pagerRow}>
-                <Text style={styles.pagerInfo}>
-                  第 {page} / {maxPage} 页 · 共 {total} 条
-                </Text>
-              </View>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>分页</Text>
+              <Text style={[styles.pagerInfo, { color: colors.muted }]}>
+                第 {page} / {maxPage} 页 · 共 {total} 条
+              </Text>
               <View style={styles.chipRow}>
-                {[10, 20, 50].map((s) => {
-                  const active = pageSize === s;
-                  return (
-                    <Pressable
-                      key={s}
-                      style={[styles.chip, active ? styles.chipActive : styles.chipIdle]}
-                      onPress={() => {
-                        setPageSize(s);
-                        setPage(1);
-                        void load(1);
-                      }}
-                      disabled={busy}>
-                      <Text style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextIdle]}>{s}/页</Text>
-                    </Pressable>
-                  );
-                })}
+                {[10, 20, 50].map((s) =>
+                  renderChip(`${s}/页`, pageSize === s, () => {
+                    setPageSize(s);
+                    setPage(1);
+                    void load(1);
+                  })
+                )}
               </View>
             </Surface>
 
-            <Text style={styles.listTitle}>列表</Text>
+            <Text style={[styles.listTitle, { color: colors.ink }]}>列表</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -505,6 +500,7 @@ export default function LogsScreen() {
             .join(' · ');
           return (
             <Pressable
+              accessibilityRole="button"
               onPress={() => {
                 setDetailsLog(item);
                 setDetailsOpen(true);
@@ -512,28 +508,28 @@ export default function LogsScreen() {
               disabled={busy}>
               <Surface style={styles.item}>
                 <View style={styles.itemTop}>
-                  <Badge text={logTypeLabel(item.type)} color="#DDF1EC" />
-                  <Text style={styles.time}>{formatDateTimeEpochSeconds(item.createdAt)}</Text>
+                  <Badge text={logTypeLabel(item.type)} tone="accent" />
+                  <Text style={[styles.time, { color: colors.subtle }]}>{formatDateTimeEpochSeconds(item.createdAt)}</Text>
                 </View>
                 {!!(item.modelName || item.tokenName) && (
-                  <Text style={styles.title2} numberOfLines={1}>
+                  <Text style={[styles.title2, { color: colors.ink }]} numberOfLines={1}>
                     {(item.modelName ? `${item.modelName}` : '—') + (item.tokenName ? ` · ${item.tokenName}` : '')}
                   </Text>
                 )}
                 {!!meta && (
-                  <Text style={styles.meta} numberOfLines={1}>
+                  <Text style={[styles.meta, { color: colors.muted }]} numberOfLines={1}>
                     {meta}
                   </Text>
                 )}
                 <View style={styles.kvInline}>
-                  <Text style={styles.inlineKey}>消耗</Text>
-                  <Text style={styles.inlineVal}>{formatOmega(item.quota)}</Text>
-                  <Text style={styles.inlineKey}>Tokens</Text>
-                  <Text style={styles.inlineVal}>{formatCount(totalTokens)}</Text>
-                  <Text style={styles.inlineKey}>用时</Text>
-                  <Text style={styles.inlineVal}>{item.useTime ? `${item.useTime}s` : '—'}</Text>
+                  <Text style={[styles.inlineKey, { color: colors.muted }]}>消耗</Text>
+                  <Text style={[styles.inlineVal, { color: colors.ink }]}>{formatOmega(item.quota)}</Text>
+                  <Text style={[styles.inlineKey, { color: colors.muted }]}>Tokens</Text>
+                  <Text style={[styles.inlineVal, { color: colors.ink }]}>{formatCount(totalTokens)}</Text>
+                  <Text style={[styles.inlineKey, { color: colors.muted }]}>用时</Text>
+                  <Text style={[styles.inlineVal, { color: colors.ink }]}>{item.useTime ? `${item.useTime}s` : '—'}</Text>
                 </View>
-                <Text style={styles.content} numberOfLines={3}>
+                <Text style={[styles.content, { color: colors.ink }]} numberOfLines={3}>
                   {item.content || '—'}
                 </Text>
               </Surface>
@@ -554,24 +550,23 @@ export default function LogsScreen() {
         disabledNext={busy || !canNext}
         refreshLabel={busy ? '刷新中…' : '刷新'}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F3F6F5',
   },
   list: {
     flex: 1,
   },
   container: {
     width: '100%',
-    maxWidth: 1180,
+    maxWidth: Layout.contentMaxWidth,
     alignSelf: 'center',
-    padding: 16,
-    gap: 16,
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
   },
   header: {
     gap: 12,
@@ -579,54 +574,24 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#15211F',
-  },
-  errorText: {
-    color: '#B42318',
-    fontWeight: '600',
   },
   cardTitle: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#15211F',
+    fontWeight: '700',
   },
   filterCard: {
     gap: 10,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     paddingHorizontal: 12,
     paddingVertical: 10,
-  },
-  inputLight: {
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
-    color: '#15211F',
-  },
-  inputDark: {
-    borderColor: '#333',
-    backgroundColor: '#1e1f20',
-    color: '#ECEDEE',
   },
   inlineRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-  },
-  smallBtn: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#0B6B5C',
-  },
-  smallBtnText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-  ghostBtn: {
-    backgroundColor: '#63716E',
   },
   statCard: {
     gap: 10,
@@ -637,14 +602,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   statKey: {
-    color: '#63716E',
     fontSize: 13,
     fontWeight: '600',
   },
   statVal: {
-    color: '#15211F',
     fontSize: 13,
     fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   pagerCard: {
     gap: 10,
@@ -653,7 +617,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     fontWeight: '800',
-    color: '#15211F',
   },
   item: {
     gap: 10,
@@ -665,8 +628,7 @@ const styles = StyleSheet.create({
   },
   title2: {
     fontSize: 13,
-    fontWeight: '900',
-    color: '#15211F',
+    fontWeight: '700',
   },
   kvInline: {
     flexDirection: 'row',
@@ -675,34 +637,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inlineKey: {
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   inlineVal: {
-    color: '#15211F',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
   time: {
-    color: '#8A9894',
     fontSize: 12,
     fontWeight: '600',
   },
   content: {
-    color: '#15211F',
     fontSize: 13,
     lineHeight: 18,
   },
   meta: {
-    color: '#63716E',
     fontSize: 12,
     marginTop: 2,
-  },
-  empty: {
-    paddingTop: 16,
-    color: '#63716E',
-    textAlign: 'center',
   },
   chipRow: {
     flexDirection: 'row',
@@ -712,26 +665,15 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  chipIdle: {
-    backgroundColor: '#fff',
-    borderColor: '#D8E1DE',
-  },
-  chipActive: {
-    backgroundColor: '#0B6B5C',
-    borderColor: '#0B6B5C',
+  chipPressed: {
+    opacity: 0.7,
   },
   chipText: {
     fontSize: 12,
-    fontWeight: '900',
-  },
-  chipTextIdle: {
-    color: '#15211F',
-  },
-  chipTextActive: {
-    color: '#fff',
+    fontWeight: '600',
   },
   timeRow: {
     flexDirection: 'column',
@@ -740,29 +682,19 @@ const styles = StyleSheet.create({
   timeInput: {
     width: '100%',
   },
-  pagerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
   pagerInfo: {
-    flex: 1,
     textAlign: 'center',
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
-    padding: 16,
+    padding: Layout.pagePadding,
   },
   modalCard: {
     maxHeight: '85%',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderRadius: Radius.medium,
     overflow: 'hidden',
   },
   modalHeader: {
@@ -772,7 +704,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#D8E1DE',
   },
   modalHeaderActions: {
     flexDirection: 'row',
@@ -780,21 +711,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 14,
-    fontWeight: '900',
-    color: '#15211F',
-  },
-  modalClose: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#0B6B5C',
-  },
-  modalCopy: {
-    backgroundColor: '#2563EB',
-  },
-  modalCloseText: {
-    color: '#fff',
-    fontWeight: '900',
+    fontWeight: '700',
   },
   modalBody: {
     padding: 14,
@@ -806,27 +723,23 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   k: {
-    color: '#63716E',
     fontSize: 12,
     fontWeight: '700',
   },
   v: {
-    color: '#15211F',
     fontSize: 12,
-    fontWeight: '900',
+    fontWeight: '600',
     flex: 1,
     textAlign: 'right',
   },
   modalSection: {
     marginTop: 8,
     fontSize: 13,
-    fontWeight: '900',
-    color: '#15211F',
+    fontWeight: '700',
   },
   mono: {
-    fontFamily: 'ui-monospace',
+    fontFamily: Fonts.mono,
     fontSize: 12,
-    color: '#15211F',
     opacity: 0.9,
   },
 });

@@ -1,15 +1,24 @@
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors, Palette } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useMe } from '@/providers/me-provider';
 
+type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
+
+function tabIcon(name: IconName) {
+  return function TabIcon({ color }: { color: string }) {
+    return <MaterialIcons size={23} name={name} color={color} />;
+  };
+}
+
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colors, isDark } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const { isAdmin } = useMe();
   const { width } = useWindowDimensions();
   const compact = width < 370;
@@ -18,13 +27,22 @@ export default function TabLayout() {
     <Tabs
       initialRouteName="index"
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        tabBarInactiveTintColor: colorScheme === 'dark' ? '#82938E' : Palette.subtle,
+        tabBarActiveTintColor: colors.accent,
+        tabBarInactiveTintColor: colors.subtle,
         headerShown: false,
         tabBarButton: HapticTab,
         tabBarHideOnKeyboard: true,
         tabBarShowLabel: !compact,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            // 底部安全区：手势导航下不与系统手势条重叠
+            height: 61 + insets.bottom,
+            paddingBottom: insets.bottom + 7,
+            backgroundColor: isDark ? colors.surface : 'rgba(255, 255, 255, 0.97)',
+            borderTopColor: colors.border,
+          },
+        ],
         tabBarItemStyle: styles.tabItem,
         tabBarLabelStyle: styles.tabLabel,
       }}>
@@ -32,37 +50,40 @@ export default function TabLayout() {
         name="index"
         options={{
           title: '我的',
-          tabBarIcon: ({ color }) => (
-            <IconSymbol size={23} name="person.crop.circle.fill" color={color} />
-          ),
+          tabBarAccessibilityLabel: '我的',
+          tabBarIcon: tabIcon('person'),
         }}
       />
       <Tabs.Screen
         name="recharge"
         options={{
           title: '充值',
-          tabBarIcon: ({ color }) => <IconSymbol size={23} name="creditcard.fill" color={color} />,
+          tabBarAccessibilityLabel: '充值',
+          tabBarIcon: tabIcon('credit-card'),
         }}
       />
       <Tabs.Screen
         name="tokens"
         options={{
           title: '令牌',
-          tabBarIcon: ({ color }) => <IconSymbol size={23} name="key.fill" color={color} />,
+          tabBarAccessibilityLabel: '令牌',
+          tabBarIcon: tabIcon('key'),
         }}
       />
       <Tabs.Screen
         name="logs"
         options={{
           title: '日志',
-          tabBarIcon: ({ color }) => <IconSymbol size={23} name="doc.text.fill" color={color} />,
+          tabBarAccessibilityLabel: '日志',
+          tabBarIcon: tabIcon('description'),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: '设置',
-          tabBarIcon: ({ color }) => <IconSymbol size={23} name="gearshape.fill" color={color} />,
+          tabBarAccessibilityLabel: '设置',
+          tabBarIcon: tabIcon('settings'),
         }}
       />
       <Tabs.Screen
@@ -71,7 +92,8 @@ export default function TabLayout() {
           isAdmin
             ? {
                 title: '管理',
-                tabBarIcon: ({ color }) => <IconSymbol size={23} name="shield.fill" color={color} />,
+                tabBarAccessibilityLabel: '管理',
+                tabBarIcon: tabIcon('shield'),
               }
             : { href: null }
         }
@@ -87,13 +109,9 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 68,
     paddingTop: 7,
-    paddingBottom: 7,
     paddingHorizontal: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.97)',
-    borderTopWidth: 1,
-    borderTopColor: Palette.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   tabItem: {
     maxWidth: 132,

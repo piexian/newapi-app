@@ -15,8 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppButton } from '@/components/ui/app-button';
 import { FormField } from '@/components/ui/form-field';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
-import { Layout, Palette, Radius } from '@/constants/theme';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAuth } from '@/providers/auth-provider';
 import { useSettings } from '@/providers/settings-provider';
 
@@ -29,6 +31,7 @@ function validateUrl(value: string) {
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { colors } = useAppTheme();
   const { baseUrl, setBaseUrl } = useSettings();
   const { userId, accessToken, setCredentials } = useAuth();
   const userIdRef = useRef<TextInput>(null);
@@ -70,8 +73,8 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      style={[styles.screen, { backgroundColor: colors.canvas }]}
+      behavior={Platform.select({ ios: 'padding', default: undefined })}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
@@ -84,29 +87,29 @@ export default function LoginScreen() {
             { width: Math.min(Layout.formMaxWidth, Math.max(0, width - Layout.pagePadding * 2)) },
           ]}>
           <View style={styles.brandRow}>
-            <View style={styles.brandMark}>
-              <Text style={styles.brandLetter}>N</Text>
+            <View style={[styles.brandMark, { backgroundColor: colors.accent }]}>
+              <Text style={[styles.brandLetter, { color: colors.onAccent }]}>N</Text>
             </View>
             <View style={styles.brandText}>
-              <Text style={styles.brandName}>NewAPI</Text>
-              <Text style={styles.brandMeta}>移动工作台</Text>
+              <Text style={[styles.brandName, { color: colors.ink }]}>NewAPI</Text>
+              <Text style={[styles.brandMeta, { color: colors.muted }]}>移动工作台</Text>
             </View>
           </View>
 
           <View style={styles.intro}>
-            <Text style={styles.title}>连接你的服务</Text>
-            <Text style={styles.subtitle}>输入实例地址和访问凭据，继续进入控制台。</Text>
+            <Text style={[styles.title, { color: colors.ink }]}>连接你的服务</Text>
+            <Text style={[styles.subtitle, { color: colors.muted }]}>输入实例地址和访问凭据，继续进入控制台。</Text>
           </View>
 
           <Surface style={styles.formCard}>
             <View style={styles.formSection}>
               <View style={styles.sectionHeading}>
-                <View style={styles.stepNumber}>
-                  <Text style={styles.stepText}>1</Text>
+                <View style={[styles.stepNumber, { backgroundColor: colors.accentSoft }]}>
+                  <Text style={[styles.stepText, { color: colors.accent }]}>1</Text>
                 </View>
                 <View style={styles.sectionCopy}>
-                  <Text style={styles.sectionTitle}>服务实例</Text>
-                  <Text style={styles.sectionHint}>你部署的 NewAPI 地址</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.ink }]}>服务实例</Text>
+                  <Text style={[styles.sectionHint, { color: colors.muted }]}>你部署的 NewAPI 地址</Text>
                 </View>
               </View>
               <FormField
@@ -126,16 +129,16 @@ export default function LoginScreen() {
               />
             </View>
 
-            <View style={styles.divider} />
+            <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
             <View style={styles.formSection}>
               <View style={styles.sectionHeading}>
-                <View style={styles.stepNumber}>
-                  <Text style={styles.stepText}>2</Text>
+                <View style={[styles.stepNumber, { backgroundColor: colors.accentSoft }]}>
+                  <Text style={[styles.stepText, { color: colors.accent }]}>2</Text>
                 </View>
                 <View style={styles.sectionCopy}>
-                  <Text style={styles.sectionTitle}>访问凭据</Text>
-                  <Text style={styles.sectionHint}>使用系统分配的用户 ID 和令牌</Text>
+                  <Text style={[styles.sectionTitle, { color: colors.ink }]}>访问凭据</Text>
+                  <Text style={[styles.sectionHint, { color: colors.muted }]}>使用系统分配的用户 ID 和令牌</Text>
                 </View>
               </View>
               <FormField
@@ -175,23 +178,21 @@ export default function LoginScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={showToken ? '隐藏访问令牌' : '显示访问令牌'}
                     onPress={() => setShowToken((current) => !current)}
-                    style={({ pressed }) => [styles.tokenToggle, pressed ? styles.tokenTogglePressed : null]}>
+                    style={({ pressed }) => [
+                      styles.tokenToggle,
+                      pressed ? { backgroundColor: colors.surfaceMuted } : null,
+                    ]}>
                     <MaterialIcons
                       name={showToken ? 'visibility-off' : 'visibility'}
                       size={20}
-                      color={Palette.muted}
+                      color={colors.muted}
                     />
                   </Pressable>
                 }
               />
             </View>
 
-            {!!submitError && (
-              <View style={styles.errorBanner} accessibilityRole="alert">
-                <MaterialIcons name="error-outline" size={19} color={Palette.danger} />
-                <Text style={styles.errorText}>{submitError}</Text>
-              </View>
-            )}
+            {!!submitError && <InlineNotice message={submitError} />}
 
             <AppButton
               label={busy ? '正在保存' : '保存并进入控制台'}
@@ -203,8 +204,8 @@ export default function LoginScreen() {
           </Surface>
 
           <View style={styles.securityNote}>
-            <MaterialIcons name="lock-outline" size={16} color={Palette.muted} />
-            <Text style={styles.securityText}>凭据仅保存在当前设备</Text>
+            <MaterialIcons name="lock-outline" size={16} color={colors.muted} />
+            <Text style={[styles.securityText, { color: colors.muted }]}>凭据仅保存在当前设备</Text>
           </View>
         </View>
       </ScrollView>
@@ -215,7 +216,6 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: Palette.canvas,
   },
   scrollContent: {
     flexGrow: 1,
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 11,
+    gap: 16,
   },
   brandMark: {
     width: 42,
@@ -238,10 +238,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.medium,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.accent,
   },
   brandLetter: {
-    color: '#FFFFFF',
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '800',
@@ -250,13 +248,11 @@ const styles = StyleSheet.create({
     gap: 1,
   },
   brandName: {
-    color: Palette.ink,
     fontSize: 17,
     lineHeight: 21,
     fontWeight: '800',
   },
   brandMeta: {
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '600',
@@ -265,23 +261,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    color: Palette.ink,
     fontSize: 30,
     lineHeight: 38,
     fontWeight: '800',
   },
   subtitle: {
-    maxWidth: 440,
-    color: Palette.muted,
+    maxWidth: Layout.formMaxWidth,
     fontSize: 15,
     lineHeight: 23,
   },
   formCard: {
     gap: 20,
-    padding: 20,
+    padding: 16,
   },
   formSection: {
-    gap: 15,
+    gap: 16,
   },
   sectionHeading: {
     flexDirection: 'row',
@@ -294,10 +288,8 @@ const styles = StyleSheet.create({
     borderRadius: Radius.small,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Palette.accentSoft,
   },
   stepText: {
-    color: Palette.accent,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -305,45 +297,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    color: Palette.ink,
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '800',
   },
   sectionHint: {
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 17,
   },
   divider: {
     height: 1,
-    backgroundColor: Palette.border,
   },
   tokenToggle: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  tokenTogglePressed: {
-    backgroundColor: Palette.surfaceMuted,
-  },
-  errorBanner: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: Radius.medium,
-    backgroundColor: Palette.dangerSoft,
-  },
-  errorText: {
-    flex: 1,
-    color: Palette.danger,
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '600',
   },
   securityNote: {
     alignSelf: 'center',
@@ -352,7 +321,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   securityText: {
-    color: Palette.muted,
     fontSize: 12,
     lineHeight: 17,
   },

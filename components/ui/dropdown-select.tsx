@@ -3,8 +3,10 @@ import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'r
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { AppButton } from '@/components/ui/app-button';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Surface } from '@/components/ui/surface';
-import { Palette, Radius } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 function splitCommaList(value: string): string[] {
   return value
@@ -47,9 +49,11 @@ export function DropdownSelect({
   disabled,
   style,
   textStyle,
-  placeholderTextColor = '#98A2B3',
+  placeholderTextColor,
   onChange,
 }: DropdownSelectProps) {
+  const { colors } = useAppTheme();
+  const placeholderColor = placeholderTextColor ?? colors.subtle;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -80,7 +84,14 @@ export function DropdownSelect({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${title}，当前值：${displayValue || placeholder}`}
-        style={({ pressed }) => [styles.field, pressed ? styles.fieldPressed : null, style]}
+        accessibilityState={{ disabled: !!disabled }}
+        style={({ pressed }) => [
+          styles.field,
+          { borderColor: colors.borderStrong, backgroundColor: colors.surface },
+          pressed ? { backgroundColor: colors.surfaceMuted } : null,
+          disabled ? styles.fieldDisabled : null,
+          style,
+        ]}
         onPress={() => {
           setQuery('');
           setOpen(true);
@@ -90,98 +101,113 @@ export function DropdownSelect({
         <Text
           style={[
             styles.fieldText,
+            { color: colors.ink },
             textStyle,
-            !displayValue ? { color: placeholderTextColor } : null,
+            !displayValue ? { color: placeholderColor } : null,
           ]}
           numberOfLines={1}
         >
           {displayValue || placeholder}
         </Text>
-        <MaterialIcons name="unfold-more" size={19} color={placeholderTextColor} />
+        <MaterialIcons name="unfold-more" size={19} color={placeholderColor} />
       </Pressable>
 
       <Modal transparent visible={open} animationType="fade" onRequestClose={() => setOpen(false)}>
-        <View style={styles.backdrop}>
-          <Surface style={styles.modalCard} accessibilityViewIsModal>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{title}</Text>
-              <View style={styles.modalHeaderActions}>
-                <AppButton
-                  label="清空"
-                  icon="backspace"
-                  variant="quiet"
-                  compact
-                  onPress={() => {
-                    onChange('');
-                    setOpen(false);
-                  }}
-                />
-                <AppButton
-                  label={multiple ? '完成' : '关闭'}
-                  icon={multiple ? 'check' : 'close'}
-                  compact
-                  onPress={() => setOpen(false)}
+        {/* 点遮罩关闭；内层拦截 responder 避免内容区点击穿透 */}
+        <Pressable style={[styles.backdrop, { backgroundColor: colors.overlay }]} onPress={() => setOpen(false)}>
+          <View onStartShouldSetResponder={() => true}>
+            <Surface style={styles.modalCard} accessibilityViewIsModal>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.ink }]}>{title}</Text>
+                <View style={styles.modalHeaderActions}>
+                  <AppButton
+                    label="清空"
+                    icon="backspace"
+                    variant="quiet"
+                    compact
+                    onPress={() => {
+                      onChange('');
+                      setOpen(false);
+                    }}
+                  />
+                  <AppButton
+                    label={multiple ? '完成' : '关闭'}
+                    icon={multiple ? 'check' : 'close'}
+                    compact
+                    onPress={() => setOpen(false)}
+                  />
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.searchShell,
+                  { borderColor: colors.borderStrong, backgroundColor: colors.surface },
+                ]}>
+                <MaterialIcons name="search" size={19} color={colors.muted} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="搜索选项"
+                  placeholderTextColor={colors.subtle}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={[styles.search, { color: colors.ink }]}
                 />
               </View>
-            </View>
 
-            <View style={styles.searchShell}>
-              <MaterialIcons name="search" size={19} color={Palette.muted} />
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="搜索选项"
-                placeholderTextColor={Palette.subtle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.search}
+              <FlatList
+                data={filteredOptions}
+                keyExtractor={(it) => it}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={<EmptyState icon="search-off" title="暂无选项" />}
+                renderItem={({ item }) => {
+                  const active = selected.has(item);
+                  return (
+                    <Pressable
+                      accessibilityRole={multiple ? 'checkbox' : 'radio'}
+                      accessibilityState={{ checked: active }}
+                      style={({ pressed }) => [
+                        styles.optionRow,
+                        { borderBottomColor: colors.border },
+                        active ? { backgroundColor: colors.accentSoft } : null,
+                        pressed ? styles.optionRowPressed : null,
+                      ]}
+                      onPress={() => {
+                        if (!multiple) {
+                          onChange(item);
+                          setOpen(false);
+                          return;
+                        }
+                        const next = new Set(selected);
+                        if (next.has(item)) next.delete(item);
+                        else next.add(item);
+                        const nextOrdered = [
+                          ...normalizedOptions.filter((o) => next.has(o)),
+                          ...splitCommaList(value).filter((o) => next.has(o) && !optionSet.has(o)),
+                        ];
+                        onChange(uniqKeepOrder(nextOrdered).join(','));
+                      }}
+                    >
+                      <Text style={[styles.optionText, { color: colors.ink }]} numberOfLines={1}>
+                        {item}
+                      </Text>
+                      <View
+                        style={[
+                          styles.check,
+                          active
+                            ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                            : { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+                        ]}>
+                        {active && <MaterialIcons name="check" size={15} color={colors.onAccent} />}
+                      </View>
+                    </Pressable>
+                  );
+                }}
               />
-            </View>
-
-            <FlatList
-              data={filteredOptions}
-              keyExtractor={(it) => it}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={styles.empty}>暂无选项</Text>}
-              renderItem={({ item }) => {
-                const active = selected.has(item);
-                return (
-                  <Pressable
-                    accessibilityRole={multiple ? 'checkbox' : 'radio'}
-                    accessibilityState={{ checked: active }}
-                    style={({ pressed }) => [
-                      styles.optionRow,
-                      active ? styles.optionRowActive : null,
-                      pressed ? styles.optionRowPressed : null,
-                    ]}
-                    onPress={() => {
-                      if (!multiple) {
-                        onChange(item);
-                        setOpen(false);
-                        return;
-                      }
-                      const next = new Set(selected);
-                      if (next.has(item)) next.delete(item);
-                      else next.add(item);
-                      const nextOrdered = [
-                        ...normalizedOptions.filter((o) => next.has(o)),
-                        ...splitCommaList(value).filter((o) => next.has(o) && !optionSet.has(o)),
-                      ];
-                      onChange(uniqKeepOrder(nextOrdered).join(','));
-                    }}
-                  >
-                    <Text style={styles.optionText} numberOfLines={1}>
-                      {item}
-                    </Text>
-                    <View style={[styles.check, active ? styles.checkActive : styles.checkIdle]}>
-                      {active && <MaterialIcons name="check" size={15} color="#FFFFFF" />}
-                    </View>
-                  </Pressable>
-                );
-              }}
-            />
-          </Surface>
-        </View>
+            </Surface>
+          </View>
+        </Pressable>
       </Modal>
     </>
   );
@@ -196,21 +222,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: Radius.medium,
     borderWidth: 1,
-    borderColor: Palette.borderStrong,
-    backgroundColor: Palette.surface,
   },
-  fieldPressed: {
-    backgroundColor: Palette.surfaceMuted,
+  fieldDisabled: {
+    opacity: 0.5,
   },
   fieldText: {
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: Palette.ink,
   },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 27, 24, 0.48)',
     padding: 16,
     justifyContent: 'center',
   },
@@ -230,8 +252,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 16,
-    fontWeight: '900',
-    color: Palette.ink,
+    fontWeight: '800',
   },
   modalHeaderActions: {
     flexDirection: 'row',
@@ -243,15 +264,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: Palette.borderStrong,
-    backgroundColor: Palette.surface,
     borderRadius: Radius.medium,
     paddingHorizontal: 12,
   },
   search: {
     flex: 1,
     paddingVertical: 10,
-    color: Palette.ink,
   },
   optionRow: {
     flexDirection: 'row',
@@ -262,10 +280,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: Radius.small,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Palette.border,
-  },
-  optionRowActive: {
-    backgroundColor: Palette.accentSoft,
   },
   optionRowPressed: {
     opacity: 0.72,
@@ -274,28 +288,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: Palette.ink,
   },
   check: {
     width: 22,
     height: 22,
-    borderRadius: 5,
+    borderRadius: Radius.small,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-  },
-  checkActive: {
-    backgroundColor: Palette.accent,
-    borderColor: Palette.accent,
-  },
-  checkIdle: {
-    backgroundColor: Palette.surface,
-    borderColor: Palette.borderStrong,
-  },
-  empty: {
-    textAlign: 'center',
-    color: Palette.muted,
-    paddingVertical: 10,
-    fontWeight: '700',
   },
 });

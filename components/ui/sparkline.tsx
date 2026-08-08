@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
+import { useAppTheme } from '@/hooks/use-app-theme';
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -10,7 +12,7 @@ export function Sparkline({
   values,
   width = 88,
   height = 28,
-  color = '#3B82F6',
+  color,
   style,
 }: {
   values: number[];
@@ -19,6 +21,8 @@ export function Sparkline({
   color?: string;
   style?: StyleProp<ViewStyle>;
 }) {
+  const { colors } = useAppTheme();
+  const stroke = color ?? colors.accent;
   const d = useMemo(() => {
     if (!values.length) return '';
     const min = Math.min(...values);
@@ -37,9 +41,8 @@ export function Sparkline({
 
   if (!d) return null;
   return (
-    <Svg width={width} height={height} style={style}>
-      <Path d={d} stroke={color} strokeWidth={2} fill="none" />
+    <Svg width={width} height={height} style={style} accessibilityLabel="趋势图">
+      <Path d={d} stroke={stroke} strokeWidth={2} strokeLinecap="round" fill="none" />
     </Svg>
   );
 }
-

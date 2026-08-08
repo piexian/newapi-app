@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,10 +13,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 
+import { Layout, Radius, type ToneName } from '@/constants/theme';
 import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
@@ -22,6 +26,7 @@ import { FloatingPageControls } from '@/components/ui/floating-page-controls';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useApi } from '@/hooks/use-api';
 import { formatDateTimeEpochSeconds } from '@/lib/format';
 import { parseChannels } from '@/lib/parsers';
@@ -80,16 +85,17 @@ function statusLabel(status?: number) {
   }
 }
 
-function statusColor(status?: number) {
+// 状态徽标语义：启用→success、手动禁用→neutral、自动禁用→warning
+function statusTone(status?: number): ToneName {
   switch (status) {
     case 1:
-      return '#DCFCE7';
+      return 'success';
     case 2:
-      return '#FEE2E2';
+      return 'neutral';
     case 3:
-      return '#FEF9C3';
+      return 'warning';
     default:
-      return '#E5E7EB';
+      return 'neutral';
   }
 }
 
@@ -127,13 +133,41 @@ function parseIntegerOrNull(input: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// 本地主题化输入框：统一边框/背景/文字/占位符颜色，避免每个输入框重复内联
+function ThemedTextInput({ style, ...props }: React.ComponentProps<typeof TextInput>) {
+  const { colors } = useAppTheme();
+  return (
+    <TextInput
+      placeholderTextColor={colors.muted}
+      {...props}
+      style={[styles.input, { color: colors.ink, backgroundColor: colors.surface, borderColor: colors.border }, style]}
+    />
+  );
+}
+
 export default function ChannelsScreen() {
+  const { colors } = useAppTheme();
   const api = useApi();
   const { isAdmin } = useMe();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
+  // 行级操作的进行中 id：仅禁用该行的按钮，不阻塞整页
+  const [pendingId, setPendingId] = useState<number | null>(null);
+  // 行级/批量操作的临时结果提示，命中后 4s 自动清除
+  const [rowResult, setRowResult] = useState<{ id: number; ok: boolean; message: string } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const resultTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTemporaryResult = useCallback((r: { id?: number; ok: boolean; message: string }) => {
+    setRowResult(r.id != null ? { id: r.id, ok: r.ok, message: r.message } : null);
+    setBulkResult(r.id == null ? { ok: r.ok, message: r.message } : null);
+    if (resultTimer.current) clearTimeout(resultTimer.current);
+    resultTimer.current = setTimeout(() => {
+      setRowResult(null);
+      setBulkResult(null);
+    }, 4000);
+  }, []);
   const [error, setError] = useState('');
 
   const [items, setItems] = useState<ReturnType<typeof parseChannels>>([]);
@@ -575,7 +609,7 @@ export default function ChannelsScreen() {
   const setStatus = useCallback(
     async (id: number, nextStatus: number) => {
       setError('');
-      setBusy(true);
+      setPendingId(id);
       try {
         const detailRes = await api.request({ path: `/api/channel/${id}` });
         const detailErr = getApiError(detailRes.body);
@@ -608,7 +642,7 @@ export default function ChannelsScreen() {
       } catch (e) {
         setError(e instanceof Error ? e.message : '更新失败');
       } finally {
-        setBusy(false);
+        setPendingId(null);
       }
     },
     [api, load, page]
@@ -617,30 +651,30 @@ export default function ChannelsScreen() {
   const testChannel = useCallback(
     async (id: number) => {
       setError('');
-      setBusy(true);
+      setPendingId(id);
       try {
         const res = await api.request({ path: `/api/channel/test/${id}` });
         const err = getApiError(res.body);
         if (err) {
-          setError(err);
+          showTemporaryResult({ id, ok: false, message: err });
           return;
         }
         const ok = isRecord(res.body) && typeof res.body.success === 'boolean' ? res.body.success : res.ok;
         const time = isRecord(res.body) && typeof res.body.time === 'number' ? res.body.time : null;
         const msg = isRecord(res.body) && typeof res.body.message === 'string' ? res.body.message : '';
         if (!ok) {
-          Alert.alert('测试失败', msg || `HTTP ${res.status}`);
+          showTemporaryResult({ id, ok: false, message: msg || `测试失败：HTTP ${res.status}` });
           return;
         }
-        Alert.alert('测试成功', time !== null ? `耗时 ${time.toFixed(3)}s` : 'OK');
+        showTemporaryResult({ id, ok: true, message: time !== null ? `测试成功，耗时 ${time.toFixed(3)}s` : '测试成功' });
         await load(page);
       } catch (e) {
-        setError(e instanceof Error ? e.message : '测试失败');
+        showTemporaryResult({ id, ok: false, message: e instanceof Error ? e.message : '测试失败' });
       } finally {
-        setBusy(false);
+        setPendingId(null);
       }
     },
-    [api, load, page]
+    [api, load, page, showTemporaryResult]
   );
 
   const testAllChannels = useCallback(() => {
@@ -662,7 +696,7 @@ export default function ChannelsScreen() {
               setError(`测试失败：HTTP ${res.status}`);
               return;
             }
-            Alert.alert('已触发', '后台测试中（可能需要一段时间）');
+            showTemporaryResult({ ok: true, message: '已触发，后台测试中（可能需要一段时间）' });
             await load(page);
           } catch (e) {
             setError(e instanceof Error ? e.message : '测试失败');
@@ -672,29 +706,29 @@ export default function ChannelsScreen() {
         },
       },
     ]);
-  }, [api, load, page]);
+  }, [api, load, page, showTemporaryResult]);
 
   const updateBalance = useCallback(
     async (id: number) => {
       setError('');
-      setBusy(true);
+      setPendingId(id);
       try {
         const res = await api.request({ path: `/api/channel/update_balance/${id}` });
         const err = getApiError(res.body);
         if (err) {
-          setError(err);
+          showTemporaryResult({ id, ok: false, message: err });
           return;
         }
         const balance = isRecord(res.body) && typeof res.body.balance === 'number' ? res.body.balance : null;
-        Alert.alert('余额', balance !== null ? `$${balance.toFixed(4)}` : 'OK');
+        showTemporaryResult({ id, ok: true, message: balance !== null ? `余额 $${balance.toFixed(4)}` : '更新完成' });
         await load(page);
       } catch (e) {
-        setError(e instanceof Error ? e.message : '更新余额失败');
+        showTemporaryResult({ id, ok: false, message: e instanceof Error ? e.message : '更新余额失败' });
       } finally {
-        setBusy(false);
+        setPendingId(null);
       }
     },
-    [api, load, page]
+    [api, load, page, showTemporaryResult]
   );
 
   const updateAllBalances = useCallback(() => {
@@ -716,7 +750,7 @@ export default function ChannelsScreen() {
               setError(`更新失败：HTTP ${res.status}`);
               return;
             }
-            Alert.alert('已触发', '后台更新中（可能需要一段时间）');
+            showTemporaryResult({ ok: true, message: '已触发，后台更新中（可能需要一段时间）' });
             await load(page);
           } catch (e) {
             setError(e instanceof Error ? e.message : '更新失败');
@@ -726,7 +760,7 @@ export default function ChannelsScreen() {
         },
       },
     ]);
-  }, [api, load, page]);
+  }, [api, load, page, showTemporaryResult]);
 
   const copyChannel = useCallback(
     (id: number) => {
@@ -736,7 +770,7 @@ export default function ChannelsScreen() {
           text: '复制',
           onPress: async () => {
             setError('');
-            setBusy(true);
+            setPendingId(id);
             try {
               const res = await api.request({
                 path: `/api/channel/copy/${id}`,
@@ -756,7 +790,7 @@ export default function ChannelsScreen() {
             } catch (e) {
               setError(e instanceof Error ? e.message : '复制失败');
             } finally {
-              setBusy(false);
+              setPendingId(null);
             }
           },
         },
@@ -805,7 +839,7 @@ export default function ChannelsScreen() {
           style: 'destructive',
           onPress: async () => {
             setError('');
-            setBusy(true);
+            setPendingId(id);
             try {
               const res = await api.request({ path: `/api/channel/${id}`, method: 'DELETE' });
               const err = getApiError(res.body);
@@ -821,7 +855,7 @@ export default function ChannelsScreen() {
             } catch (e) {
               setError(e instanceof Error ? e.message : '删除失败');
             } finally {
-              setBusy(false);
+              setPendingId(null);
             }
           },
         },
@@ -832,12 +866,10 @@ export default function ChannelsScreen() {
 
   if (!isAdmin) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
         <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.title}>渠道</Text>
-          <Surface>
-            <Text style={styles.hint}>无权限</Text>
-          </Surface>
+          <Text style={[styles.title, { color: colors.ink }]}>渠道</Text>
+          <EmptyState title="无权限" icon="lock-outline" />
           <AppButton label="返回管理" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
         </View>
       </View>
@@ -845,12 +877,13 @@ export default function ChannelsScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <FlatList
         style={styles.list}
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
+          // 底部留白 96：给浮动分页控件留出空间（比原先 120 更紧凑）
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 96 },
         ]}
         data={items}
         keyExtractor={(it) => String(it.id)}
@@ -859,7 +892,7 @@ export default function ChannelsScreen() {
             <View style={styles.titleRow}>
               <View style={styles.pageTitleGroup}>
                 <AppButton label="返回" icon="arrow-back" variant="quiet" compact onPress={() => router.back()} />
-                <Text style={styles.title}>渠道</Text>
+                <Text style={[styles.title, { color: colors.ink }]}>渠道</Text>
               </View>
               <View style={styles.headerActions}>
                 <AppButton label="新增渠道" icon="add" compact onPress={openCreate} disabled={busy} />
@@ -867,36 +900,48 @@ export default function ChannelsScreen() {
             </View>
 
             {!!error && <InlineNotice message={error} />}
+            {!!bulkResult && <InlineNotice message={bulkResult.message} tone={bulkResult.ok ? 'success' : 'danger'} />}
 
             <Surface style={styles.searchCard}>
-              <Text style={styles.cardTitle}>筛选</Text>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>筛选</Text>
               <View style={styles.chipRow}>
-                {(['all', 'enabled', 'disabled'] as const).map((k) => (
-                  <Pressable
-                    key={k}
-                    style={[styles.chip, statusFilter === k ? styles.chipActive : styles.chipIdle]}
-                    onPress={() => setStatusFilter(k)}
-                  >
-                    <Text style={[styles.chipText, statusFilter === k ? styles.chipTextActive : styles.chipTextIdle]}>
-                      {k === 'all' ? '全部' : k === 'enabled' ? '启用' : '禁用'}
-                    </Text>
-                  </Pressable>
-                ))}
+                {(['all', 'enabled', 'disabled'] as const).map((k) => {
+                  const active = statusFilter === k;
+                  return (
+                    <Pressable
+                      key={k}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        {
+                          backgroundColor: active ? colors.accent : colors.surface,
+                          borderColor: active ? colors.accent : colors.border,
+                        },
+                        pressed && { opacity: 0.8 },
+                      ]}
+                      onPress={() => setStatusFilter(k)}
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>
+                        {k === 'all' ? '全部' : k === 'enabled' ? '启用' : '禁用'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
 
               <View style={styles.formRow}>
-                <Text style={styles.formLabel}>关键字</Text>
-                <TextInput
+                <Text style={[styles.formLabel, { color: colors.muted }]}>关键字</Text>
+                <ThemedTextInput
                   value={keyword}
                   onChangeText={setKeyword}
                   placeholder="按名称/ID"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
+                  style={styles.flex1}
                 />
               </View>
               <View style={styles.formRow}>
-                <Text style={styles.formLabel}>分组</Text>
+                <Text style={[styles.formLabel, { color: colors.muted }]}>分组</Text>
                 <DropdownSelect
                   title="选择分组"
                   value={group}
@@ -907,19 +952,19 @@ export default function ChannelsScreen() {
                 />
               </View>
               <View style={styles.formRow}>
-                <Text style={styles.formLabel}>模型</Text>
-                <TextInput
+                <Text style={[styles.formLabel, { color: colors.muted }]}>模型</Text>
+                <ThemedTextInput
                   value={modelKeyword}
                   onChangeText={setModelKeyword}
                   placeholder="例如 gpt-4o"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
+                  style={styles.flex1}
                 />
               </View>
               <View style={styles.formRow}>
-                <Text style={styles.formLabel}>页大小</Text>
-                <TextInput
+                <Text style={[styles.formLabel, { color: colors.muted }]}>页大小</Text>
+                <ThemedTextInput
                   value={String(pageSize)}
                   onChangeText={(t) => {
                     const n = parseInt(t, 10);
@@ -927,16 +972,22 @@ export default function ChannelsScreen() {
                     setPageSize(Math.min(100, n));
                   }}
                   keyboardType="numeric"
-                  style={[styles.input, styles.flex1]}
+                  style={styles.flex1}
                 />
               </View>
 
               <View style={styles.inlineRow}>
-                <Pressable style={[styles.actionBtn, styles.primaryBtn]} onPress={() => load(1)} disabled={busy}>
-                  <Text style={[styles.actionText, styles.primaryText]}>应用</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.actionBtn}
+                <AppButton
+                  label="应用"
+                  variant="primary"
+                  compact
+                  onPress={() => load(1)}
+                  disabled={busy}
+                />
+                <AppButton
+                  label="清空"
+                  variant="secondary"
+                  compact
                   onPress={() => {
                     setKeyword('');
                     setGroup('');
@@ -945,92 +996,102 @@ export default function ChannelsScreen() {
                     void load(1);
                   }}
                   disabled={busy}
-                >
-                  <Text style={styles.actionText}>清空</Text>
-                </Pressable>
+                />
               </View>
 
               <View style={styles.inlineRow}>
-                <Pressable style={styles.actionBtn} onPress={testAllChannels} disabled={busy}>
-                  <Text style={styles.actionText}>测试全部</Text>
-                </Pressable>
-                <Pressable style={styles.actionBtn} onPress={updateAllBalances} disabled={busy}>
-                  <Text style={styles.actionText}>更新余额</Text>
-                </Pressable>
-                <Pressable style={styles.actionBtn} onPress={deleteDisabled} disabled={busy}>
-                  <Text style={styles.actionText}>删除禁用</Text>
-                </Pressable>
+                <AppButton label="测试全部" variant="secondary" compact onPress={testAllChannels} disabled={busy} />
+                <AppButton label="更新余额" variant="secondary" compact onPress={updateAllBalances} disabled={busy} />
+                <AppButton label="删除禁用" variant="danger" compact onPress={deleteDisabled} disabled={busy} />
               </View>
 
-              <Text style={styles.pagerInfo}>{pagerInfo}</Text>
+              <Text style={[styles.pagerInfo, { color: colors.muted }]}>{pagerInfo}</Text>
             </Surface>
           </View>
         }
         renderItem={({ item }) => (
           <Surface style={styles.item}>
             <View style={styles.itemTop}>
-              <Text style={styles.itemTitle} numberOfLines={1}>
+              <Text style={[styles.itemTitle, { color: colors.ink }]} numberOfLines={1}>
                 {item.name || `Channel #${item.id}`}
               </Text>
-              <Badge text={statusLabel(item.status)} color={statusColor(item.status)} />
+              <Badge text={statusLabel(item.status)} tone={statusTone(item.status)} />
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>Type</Text>
-              <Text style={styles.v}>
+              <Text style={[styles.k, { color: colors.muted }]}>Type</Text>
+              <Text style={[styles.v, { color: colors.ink }]}>
                 {item.type !== undefined ? `${channelTypeLabel(item.type)} (${item.type})` : '-'}
               </Text>
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>ID</Text>
-              <Text style={styles.v}>{item.id}</Text>
+              <Text style={[styles.k, { color: colors.muted }]}>ID</Text>
+              <Text style={[styles.v, { color: colors.ink }]}>{item.id}</Text>
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>Group</Text>
-              <Text style={styles.v}>{item.group || '-'}</Text>
+              <Text style={[styles.k, { color: colors.muted }]}>Group</Text>
+              <Text style={[styles.v, { color: colors.ink }]}>{item.group || '-'}</Text>
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>BaseURL</Text>
-              <Text style={styles.v} numberOfLines={1}>
+              <Text style={[styles.k, { color: colors.muted }]}>BaseURL</Text>
+              <Text style={[styles.v, { color: colors.ink }]} numberOfLines={1}>
                 {item.baseUrl || '-'}
               </Text>
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>Tag</Text>
-              <Text style={styles.v}>{item.tag || '-'}</Text>
+              <Text style={[styles.k, { color: colors.muted }]}>Tag</Text>
+              <Text style={[styles.v, { color: colors.ink }]}>{item.tag || '-'}</Text>
             </View>
             <View style={styles.kvRow}>
-              <Text style={styles.k}>创建</Text>
-              <Text style={styles.v}>{formatDateTimeEpochSeconds(item.createdTime)}</Text>
+              <Text style={[styles.k, { color: colors.muted }]}>创建</Text>
+              <Text style={[styles.v, { color: colors.ink }]}>{formatDateTimeEpochSeconds(item.createdTime)}</Text>
             </View>
             <View style={styles.opsRow}>
-              <Pressable style={[styles.smallBtn, styles.primaryBtn]} onPress={() => openEdit(item.id)} disabled={busy}>
-                <Text style={[styles.smallBtnText, styles.primaryText]}>编辑</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.smallBtn, item.status === 1 ? styles.dangerBtn : styles.primaryBtn]}
+              <AppButton label="编辑" variant="primary" compact onPress={() => openEdit(item.id)} disabled={busy} />
+              <AppButton
+                label={item.status === 1 ? '禁用' : '启用'}
+                variant={item.status === 1 ? 'danger' : 'primary'}
+                compact
                 onPress={() => setStatus(item.id, item.status === 1 ? 2 : 1)}
-                disabled={busy}
-              >
-                <Text style={[styles.smallBtnText, item.status === 1 ? styles.dangerText : styles.primaryText]}>
-                  {item.status === 1 ? '禁用' : '启用'}
-                </Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.ghostBtn]} onPress={() => testChannel(item.id)} disabled={busy}>
-                <Text style={[styles.smallBtnText, styles.primaryText]}>测试</Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.ghostBtn]} onPress={() => updateBalance(item.id)} disabled={busy}>
-                <Text style={[styles.smallBtnText, styles.primaryText]}>余额</Text>
-              </Pressable>
-              <Pressable style={styles.smallBtn} onPress={() => copy(String(item.id))} disabled={busy}>
-                <Text style={styles.smallBtnText}>复制ID</Text>
-              </Pressable>
-              <Pressable style={styles.smallBtn} onPress={() => copyChannel(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>复制渠道</Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.ghostBtn]} onPress={() => remove(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>删除</Text>
-              </Pressable>
+                disabled={pendingId === item.id}
+              />
+              <AppButton
+                label="测试"
+                variant="secondary"
+                compact
+                onPress={() => testChannel(item.id)}
+                disabled={pendingId === item.id}
+              />
+              <AppButton
+                label="余额"
+                variant="secondary"
+                compact
+                onPress={() => updateBalance(item.id)}
+                disabled={pendingId === item.id}
+              />
+              <AppButton
+                label="复制ID"
+                variant="secondary"
+                compact
+                onPress={() => copy(String(item.id))}
+              />
+              <AppButton
+                label="复制渠道"
+                variant="secondary"
+                compact
+                onPress={() => copyChannel(item.id)}
+                disabled={pendingId === item.id}
+              />
+              <AppButton
+                label="删除"
+                variant="danger"
+                compact
+                onPress={() => remove(item.id)}
+                disabled={pendingId === item.id}
+              />
             </View>
+            {rowResult?.id === item.id && (
+              <InlineNotice message={rowResult.message} tone={rowResult.ok ? 'success' : 'danger'} />
+            )}
           </Surface>
         )}
         ListEmptyComponent={
@@ -1047,275 +1108,322 @@ export default function ChannelsScreen() {
           setModelsPickerOpen(false);
         }}
       >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: colors.overlay, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
+          ]}
+        >
           <Surface style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingId ? `编辑 Channel #${editingId}` : '新增渠道'}</Text>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>
+                {editingId ? `编辑 Channel #${editingId}` : '新增渠道'}
+              </Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable
-                  style={styles.modalBtn}
+                <AppButton
+                  label="关闭"
+                  variant="secondary"
+                  compact
                   onPress={() => {
                     setFormOpen(false);
                     setModelsPickerOpen(false);
                   }}
                   disabled={busy}
-                >
-                  <Text style={styles.modalBtnText}>关闭</Text>
-                </Pressable>
-                <Pressable style={[styles.modalBtn, styles.primaryBtn]} onPress={save} disabled={busy}>
-                  <Text style={[styles.modalBtnText, styles.primaryText]}>{busy ? '保存中…' : '保存'}</Text>
-                </Pressable>
+                />
+                <AppButton
+                  label={busy ? '保存中…' : '保存'}
+                  variant="primary"
+                  compact
+                  onPress={save}
+                  disabled={busy}
+                />
               </View>
             </View>
 
             {!!error && <InlineNotice message={error} />}
 
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <Text style={styles.sectionTitle}>基本信息</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>名称*</Text>
-                <TextInput
-                  value={nameInput}
-                  onChangeText={setNameInput}
-                  placeholder="Channel name"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Type*</Text>
-                <TextInput
-                  value={typeInput}
-                  onChangeText={setTypeInput}
-                  placeholder="1"
-                  keyboardType="numeric"
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.quickRow}>
-                {[1, 3, 4, 14, 20, 24, 25, 43].map((t) => (
-                  <Pressable key={t} style={styles.quickBtn} onPress={() => setTypeInput(String(t))} disabled={busy}>
-                    <Text style={styles.quickText}>{channelTypeLabel(t)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>分组</Text>
-                <DropdownSelect
-                  title="选择分组（可多选）"
-                  multiple
-                  value={groupInput}
-                  onChange={setGroupInput}
-                  options={groupOptions}
-                  placeholder="default"
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>启用</Text>
-                <Switch value={statusEnabled} onValueChange={setStatusEnabled} />
-              </View>
-              {!editingId && (
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              style={styles.modalKeyboard}
+            >
+              <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>基本信息</Text>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>多Key</Text>
-                  <Switch value={isMultiKey} onValueChange={setIsMultiKey} />
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>名称*</Text>
+                  <ThemedTextInput
+                    value={nameInput}
+                    onChangeText={setNameInput}
+                    placeholder="Channel name"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.flex1}
+                  />
                 </View>
-              )}
-              {!editingId && isMultiKey && (
-                <View style={styles.chipRow}>
-                  {(['random', 'polling'] as const).map((m) => (
-                    <Pressable
-                      key={m}
-                      style={[styles.chip, multiKeyMode === m ? styles.chipActive : styles.chipIdle]}
-                      onPress={() => setMultiKeyMode(m)}
+
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Type*</Text>
+                  <ThemedTextInput
+                    value={typeInput}
+                    onChangeText={setTypeInput}
+                    placeholder="1"
+                    keyboardType="numeric"
+                    style={styles.flex1}
+                  />
+                </View>
+                <View style={styles.quickRow}>
+                  {[1, 3, 4, 14, 20, 24, 25, 43].map((t) => (
+                    <AppButton
+                      key={t}
+                      label={channelTypeLabel(t)}
+                      variant="secondary"
+                      compact
+                      onPress={() => setTypeInput(String(t))}
                       disabled={busy}
-                    >
-                      <Text style={[styles.chipText, multiKeyMode === m ? styles.chipTextActive : styles.chipTextIdle]}>
-                        {m === 'random' ? '随机' : '轮询'}
-                      </Text>
-                    </Pressable>
+                    />
                   ))}
                 </View>
-              )}
 
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>BaseURL</Text>
-                <TextInput
-                  value={baseUrlInput}
-                  onChangeText={setBaseUrlInput}
-                  placeholder="https://api.openai.com"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>{editingId ? 'Key(留空不改)' : 'Key*'}</Text>
-                <TextInput
-                  value={keyInput}
-                  onChangeText={setKeyInput}
-                  placeholder={editingId ? '留空不修改' : 'API key'}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              {editingId && isMultiKey && keyInput.trim() && (
-                <View style={styles.chipRow}>
-                  {(['replace', 'append'] as const).map((m) => (
-                    <Pressable
-                      key={m}
-                      style={[styles.chip, keyMode === m ? styles.chipActive : styles.chipIdle]}
-                      onPress={() => setKeyMode(m)}
-                      disabled={busy}
-                    >
-                      <Text style={[styles.chipText, keyMode === m ? styles.chipTextActive : styles.chipTextIdle]}>
-                        {m === 'replace' ? '覆盖' : '追加'}
-                      </Text>
-                    </Pressable>
-                  ))}
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>分组</Text>
+                  <DropdownSelect
+                    title="选择分组（可多选）"
+                    multiple
+                    value={groupInput}
+                    onChange={setGroupInput}
+                    options={groupOptions}
+                    placeholder="default"
+                    style={[styles.input, styles.flex1]}
+                  />
                 </View>
-              )}
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>启用</Text>
+                  <Switch value={statusEnabled} onValueChange={setStatusEnabled} />
+                </View>
+                {!editingId && (
+                  <View style={styles.formRow}>
+                    <Text style={[styles.formLabel, { color: colors.muted }]}>多Key</Text>
+                    <Switch value={isMultiKey} onValueChange={setIsMultiKey} />
+                  </View>
+                )}
+                {!editingId && isMultiKey && (
+                  <View style={styles.chipRow}>
+                    {(['random', 'polling'] as const).map((m) => {
+                      const active = multiKeyMode === m;
+                      return (
+                        <Pressable
+                          key={m}
+                          style={({ pressed }) => [
+                            styles.chip,
+                            {
+                              backgroundColor: active ? colors.accent : colors.surface,
+                              borderColor: active ? colors.accent : colors.border,
+                            },
+                            (busy || pressed) && { opacity: busy ? 0.5 : 0.8 },
+                          ]}
+                          onPress={() => setMultiKeyMode(m)}
+                          disabled={busy}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>
+                            {m === 'random' ? '随机' : '轮询'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
 
-              <View style={styles.divider} />
-              <Text style={styles.sectionTitle}>模型 / 权重</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Models</Text>
-                <TextInput
-                  value={modelsInput}
-                  onChangeText={setModelsInput}
-                  placeholder="gpt-4o,gpt-4o-mini"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              <View style={styles.inlineRow}>
-                <Pressable
-                  style={[styles.actionBtn, styles.primaryBtn]}
-                  onPress={fetchUpstreamModels}
-                  disabled={busy || fetchModelsBusy}
-                >
-                  <Text style={[styles.actionText, styles.primaryText]}>{fetchModelsBusy ? '获取中…' : '获取模型'}</Text>
-                </Pressable>
-                {!!fetchedModels.length && <Text style={styles.hint}>{`已获取 ${fetchedModels.length} 个`}</Text>}
-              </View>
-              {!!fetchModelsError && <Text style={styles.errorText}>{fetchModelsError}</Text>}
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Weight</Text>
-                <TextInput
-                  value={weightInput}
-                  onChangeText={setWeightInput}
-                  placeholder="0"
-                  keyboardType="numeric"
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Priority</Text>
-                <TextInput
-                  value={priorityInput}
-                  onChangeText={setPriorityInput}
-                  placeholder="0"
-                  keyboardType="numeric"
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>BaseURL</Text>
+                  <ThemedTextInput
+                    value={baseUrlInput}
+                    onChangeText={setBaseUrlInput}
+                    placeholder="https://api.openai.com"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.flex1}
+                  />
+                </View>
 
-              <View style={styles.divider} />
-              <Text style={styles.sectionTitle}>Tag / 备注</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Tag</Text>
-                <TextInput
-                  value={tagInput}
-                  onChangeText={setTagInput}
-                  placeholder="tag"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Remark</Text>
-                <TextInput
-                  value={remarkInput}
-                  onChangeText={setRemarkInput}
-                  placeholder="remark"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>
+                    {editingId ? 'Key(留空不改)' : 'Key*'}
+                  </Text>
+                  <ThemedTextInput
+                    value={keyInput}
+                    onChangeText={setKeyInput}
+                    placeholder={editingId ? '留空不修改' : 'API key'}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                {editingId && isMultiKey && keyInput.trim() && (
+                  <View style={styles.chipRow}>
+                    {(['replace', 'append'] as const).map((m) => {
+                      const active = keyMode === m;
+                      return (
+                        <Pressable
+                          key={m}
+                          style={({ pressed }) => [
+                            styles.chip,
+                            {
+                              backgroundColor: active ? colors.accent : colors.surface,
+                              borderColor: active ? colors.accent : colors.border,
+                            },
+                            (busy || pressed) && { opacity: busy ? 0.5 : 0.8 },
+                          ]}
+                          onPress={() => setKeyMode(m)}
+                          disabled={busy}
+                          accessibilityState={{ selected: active }}
+                        >
+                          <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>
+                            {m === 'replace' ? '覆盖' : '追加'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
 
-              <View style={styles.divider} />
-              <Text style={styles.sectionTitle}>高级（可选）</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Other</Text>
-                <TextInput
-                  value={otherInput}
-                  onChangeText={setOtherInput}
-                  placeholder="other"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Setting</Text>
-                <TextInput
-                  value={settingInput}
-                  onChangeText={setSettingInput}
-                  placeholder="channel setting"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>ModelMap</Text>
-                <TextInput
-                  value={modelMappingInput}
-                  onChangeText={setModelMappingInput}
-                  placeholder="model_mapping"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Param</Text>
-                <TextInput
-                  value={paramOverrideInput}
-                  onChangeText={setParamOverrideInput}
-                  placeholder="param_override"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>Header</Text>
-                <TextInput
-                  value={headerOverrideInput}
-                  onChangeText={setHeaderOverrideInput}
-                  placeholder="header_override"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[styles.input, styles.flex1, styles.textArea]}
-                />
-              </View>
-            </ScrollView>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>模型 / 权重</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Models</Text>
+                  <ThemedTextInput
+                    value={modelsInput}
+                    onChangeText={setModelsInput}
+                    placeholder="gpt-4o,gpt-4o-mini"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                <View style={styles.inlineRow}>
+                  <AppButton
+                    label={fetchModelsBusy ? '获取中…' : '获取模型'}
+                    variant="primary"
+                    compact
+                    onPress={fetchUpstreamModels}
+                    disabled={busy || fetchModelsBusy}
+                  />
+                  {!!fetchedModels.length && (
+                    <Text style={[styles.hint, { color: colors.muted }]}>{`已获取 ${fetchedModels.length} 个`}</Text>
+                  )}
+                </View>
+                {!!fetchModelsError && <InlineNotice message={fetchModelsError} />}
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Weight</Text>
+                  <ThemedTextInput
+                    value={weightInput}
+                    onChangeText={setWeightInput}
+                    placeholder="0"
+                    keyboardType="numeric"
+                    style={styles.flex1}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Priority</Text>
+                  <ThemedTextInput
+                    value={priorityInput}
+                    onChangeText={setPriorityInput}
+                    placeholder="0"
+                    keyboardType="numeric"
+                    style={styles.flex1}
+                  />
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>Tag / 备注</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Tag</Text>
+                  <ThemedTextInput
+                    value={tagInput}
+                    onChangeText={setTagInput}
+                    placeholder="tag"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.flex1}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Remark</Text>
+                  <ThemedTextInput
+                    value={remarkInput}
+                    onChangeText={setRemarkInput}
+                    placeholder="remark"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={styles.flex1}
+                  />
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>高级（可选）</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Other</Text>
+                  <ThemedTextInput
+                    value={otherInput}
+                    onChangeText={setOtherInput}
+                    placeholder="other"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Setting</Text>
+                  <ThemedTextInput
+                    value={settingInput}
+                    onChangeText={setSettingInput}
+                    placeholder="channel setting"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>ModelMap</Text>
+                  <ThemedTextInput
+                    value={modelMappingInput}
+                    onChangeText={setModelMappingInput}
+                    placeholder="model_mapping"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Param</Text>
+                  <ThemedTextInput
+                    value={paramOverrideInput}
+                    onChangeText={setParamOverrideInput}
+                    placeholder="param_override"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>Header</Text>
+                  <ThemedTextInput
+                    value={headerOverrideInput}
+                    onChangeText={setHeaderOverrideInput}
+                    placeholder="header_override"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[styles.flex1, styles.textArea]}
+                  />
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Surface>
         </View>
       </Modal>
@@ -1326,24 +1434,26 @@ export default function ChannelsScreen() {
         animationType="slide"
         onRequestClose={() => setModelsPickerOpen(false)}
       >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: colors.overlay, paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
+          ]}
+        >
           <Surface style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>选择模型</Text>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>选择模型</Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable style={styles.modalBtn} onPress={() => setModelsPickerOpen(false)}>
-                  <Text style={styles.modalBtnText}>关闭</Text>
-                </Pressable>
+                <AppButton label="关闭" variant="secondary" compact onPress={() => setModelsPickerOpen(false)} />
               </View>
             </View>
 
-            <TextInput
+            <ThemedTextInput
               value={modelsPickerKeyword}
               onChangeText={setModelsPickerKeyword}
               placeholder="搜索模型"
               autoCapitalize="none"
               autoCorrect={false}
-              style={styles.input}
             />
 
             <FlatList
@@ -1354,13 +1464,21 @@ export default function ChannelsScreen() {
               renderItem={({ item }) => {
                 const active = selectedModels.has(item);
                 return (
-                  <Pressable style={styles.modelRow} onPress={() => toggleModelInModelsInput(item)}>
-                    <Text style={styles.modelText} numberOfLines={1}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.modelRow,
+                      { borderBottomColor: colors.border },
+                      pressed && { opacity: 0.7 },
+                    ]}
+                    onPress={() => toggleModelInModelsInput(item)}
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[styles.modelText, { color: colors.ink }]} numberOfLines={1}>
                       {item}
                     </Text>
-                    <Text style={[styles.modelCheck, active ? styles.modelCheckOn : styles.modelCheckOff]}>
-                      {active ? '✓' : ''}
-                    </Text>
+                    {active ? (
+                      <MaterialIcons name="check" size={18} color={colors.ink} style={styles.modelCheck} />
+                    ) : null}
                   </Pressable>
                 );
               }}
@@ -1383,110 +1501,56 @@ export default function ChannelsScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F3F6F5' },
+  screen: { flex: 1 },
   list: { flex: 1 },
-  container: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 16, gap: 16 },
+  container: {
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
+  },
   header: { gap: 12 },
   titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   pageTitleGroup: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  title: { fontSize: 20, fontWeight: '800', color: '#15211F' },
+  title: { fontSize: 20, fontWeight: '800' },
   headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 10 },
-  errorText: { color: '#B42318', fontWeight: '700' },
   searchCard: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#15211F' },
+  cardTitle: { fontSize: 14, fontWeight: '700' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: StyleSheet.hairlineWidth },
-  chipIdle: { backgroundColor: '#fff', borderColor: '#D8E1DE' },
-  chipActive: { backgroundColor: '#0B6B5C', borderColor: '#0B6B5C' },
-  chipText: { fontSize: 12, fontWeight: '900' },
-  chipTextIdle: { color: '#15211F' },
-  chipTextActive: { color: '#fff' },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth },
+  chipText: { fontSize: 12, fontWeight: '600' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  quickBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E1DE',
-  },
-  quickText: { color: '#15211F', fontWeight: '800', fontSize: 12 },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  formLabel: { width: 56, color: '#63716E', fontSize: 12, fontWeight: '800' },
+  formLabel: { minWidth: 64, flexShrink: 0, fontSize: 12, fontWeight: '800' },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 8,
+    borderRadius: Radius.medium,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
-    color: '#15211F',
   },
   textArea: { minHeight: 64, textAlignVertical: 'top' },
   flex1: { flex: 1 },
   inlineRow: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
-  actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E1DE',
-    alignSelf: 'flex-start',
-  },
-  actionText: { fontWeight: '800', color: '#15211F' },
-  primaryBtn: { backgroundColor: '#0B6B5C', borderColor: 'transparent' },
-  primaryText: { color: '#fff' },
-  dangerBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
-  dangerText: { color: '#991B1B' },
-  ghostBtn: { backgroundColor: '#63716E', borderColor: 'transparent' },
-  pagerInfo: { flex: 1, textAlign: 'center', color: '#63716E', fontSize: 12, fontWeight: '700' },
+  pagerInfo: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700' },
   item: { gap: 10 },
   itemTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  itemTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
+  itemTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
   kvRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  k: { color: '#63716E', fontSize: 12, fontWeight: '700' },
-  v: { color: '#15211F', fontSize: 12, fontWeight: '900' },
+  k: { fontSize: 12, fontWeight: '700' },
+  v: { fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
   opsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
-  },
-  smallBtnText: { fontWeight: '900', color: '#15211F' },
-  empty: { paddingTop: 16, color: '#63716E', textAlign: 'center' },
-  backBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#0B6B5C',
-  },
-  backText: { color: '#fff', fontWeight: '900' },
-  hint: { color: '#63716E', fontSize: 12, fontWeight: '600' },
+  hint: { fontSize: 12, fontWeight: '600' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
     paddingHorizontal: 12,
     justifyContent: 'flex-end',
   },
   modalCard: { maxHeight: '92%', padding: 12, gap: 12 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#15211F' },
+  modalTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
   modalHeaderActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  modalBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D8E1DE',
-    backgroundColor: '#fff',
-  },
-  modalBtnText: { fontWeight: '900', color: '#15211F' },
+  modalKeyboard: { flexShrink: 1 },
   modalBody: { paddingBottom: 12, gap: 10 },
   modelRow: {
     flexDirection: 'row',
@@ -1495,12 +1559,9 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E6ECEA',
   },
-  modelText: { flex: 1, color: '#15211F', fontSize: 12, fontWeight: '800' },
-  modelCheck: { width: 22, textAlign: 'center', fontWeight: '900' },
-  modelCheckOn: { color: '#15211F' },
-  modelCheckOff: { color: 'transparent' },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: '#D8E1DE' },
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#15211F' },
+  modelText: { flex: 1, fontSize: 12, fontWeight: '800' },
+  modelCheck: { width: 22, textAlign: 'center' },
+  divider: { height: StyleSheet.hairlineWidth },
+  sectionTitle: { fontSize: 12, fontWeight: '600' },
 });
