@@ -27,26 +27,31 @@ export function MeProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     if (!baseUrl || !authLoaded || !isSignedIn) {
       setMe(null);
+      // 未登录或凭证未就绪：加载状态跟随 authLoaded，避免短暂错报为"已加载"。
       setIsLoaded(authLoaded);
       return;
     }
     try {
       const res = await api.request({ path: '/api/user/self' });
       const body = res.body as unknown;
-      if (body && typeof body === 'object' && !Array.isArray(body) && 'success' in (body as any)) {
+      if (
+        body &&
+        typeof body === 'object' &&
+        !Array.isArray(body) &&
+        'success' in (body as Record<string, unknown>)
+      ) {
         const success = (body as { success?: boolean }).success;
         if (success === false) {
           setMe(null);
-          setIsLoaded(true);
           return;
         }
       }
       setMe(parseUser(body));
     } catch {
       setMe(null);
-    } finally {
-      setIsLoaded(true);
     }
+    // 注意：isLoaded 统一由下方 effect 的 finally 设置，此处不再重复置位，
+    // 避免与 effect 的设置竞态导致状态错乱。
   }, [api, authLoaded, baseUrl, isSignedIn]);
 
   useEffect(() => {

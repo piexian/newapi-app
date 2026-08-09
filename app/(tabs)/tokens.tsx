@@ -363,7 +363,20 @@ export default function TokensScreen() {
             ? (base.remain_quota as number)
             : 0;
 
+      // 合并策略：base（服务端现有字段，编辑时保留）→ extra（用户在高级 JSON 里显式编辑的字段）→ 表单字段（最高优先级，覆盖前两者）。
+      // 此前只取固定键、丢弃 base/extra，导致用户在"高级字段(JSON)"的编辑不被保存，也丢失后端返回的其它字段。
+      // 删除 extra 里被表单字段接管的键，避免被 base 的旧值覆盖表单意图。
+      const {
+        cross_group_retry: _extraCrossGroupRetry,
+        group: _extraGroup,
+        model_limits: _extraModelLimits,
+        allow_ips: _extraAllowIps,
+        ...extraRest
+      } = extra;
+
       const payload: Record<string, unknown> = {
+        ...(editingId ? base : {}),
+        ...extraRest,
         ...(editingId ? { id: editingId } : {}),
         name: nameInput.trim(),
         status: statusEnabled ? 1 : 2,

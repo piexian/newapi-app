@@ -181,6 +181,16 @@ export default function ChannelsScreen() {
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [modelKeyword, setModelKeyword] = useState('');
 
+  // applied*：已提交的筛选条件。chips/输入直接改 draft，只有点"应用/清空"时提交到 applied，
+  // query/load 依赖 applied，避免每个字符/切换都触发网络请求。
+  const [appliedStatusFilter, setAppliedStatusFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedGroup, setAppliedGroup] = useState('');
+  const [appliedModelKeyword, setAppliedModelKeyword] = useState('');
+
+  // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应。
+  const requestSeq = useRef(0);
+
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingOriginal, setEditingOriginal] = useState<AnyRecord | null>(null);
@@ -211,15 +221,16 @@ export default function ChannelsScreen() {
   const [headerOverrideInput, setHeaderOverrideInput] = useState('');
 
   const query = useMemo(() => {
-    const kw = keyword.trim();
-    const g = group.trim();
-    const mk = modelKeyword.trim();
-    const status = statusFilter === 'all' ? undefined : statusFilter;
+    const kw = appliedKeyword.trim();
+    const g = appliedGroup.trim();
+    const mk = appliedModelKeyword.trim();
+    const status = appliedStatusFilter === 'all' ? undefined : appliedStatusFilter;
     return { kw, g, mk, status };
-  }, [group, keyword, modelKeyword, statusFilter]);
+  }, [appliedGroup, appliedKeyword, appliedModelKeyword, appliedStatusFilter]);
 
   const load = useCallback(
     async (nextPage = 1) => {
+      const seq = ++requestSeq.current;
       setError('');
       setBusy(true);
       try {
@@ -236,6 +247,8 @@ export default function ChannelsScreen() {
             id_sort: true,
           },
         });
+        if (seq !== requestSeq.current) return;
+
         const err = getApiError(res.body);
         if (err) {
           setError(err);
@@ -256,9 +269,10 @@ export default function ChannelsScreen() {
         setPage(nextPage);
         if (!res.ok) setError(`请求失败：HTTP ${res.status}`);
       } catch (e) {
+        if (seq !== requestSeq.current) return;
         setError(e instanceof Error ? e.message : '请求失败');
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
     [api, pageSize, query.g, query.kw, query.mk, query.status]
@@ -981,7 +995,12 @@ export default function ChannelsScreen() {
                   label="应用"
                   variant="primary"
                   compact
-                  onPress={() => load(1)}
+                  onPress={() => {
+                    setAppliedKeyword(keyword);
+                    setAppliedGroup(group);
+                    setAppliedModelKeyword(modelKeyword);
+                    setAppliedStatusFilter(statusFilter);
+                  }}
                   disabled={busy}
                 />
                 <AppButton
@@ -993,7 +1012,10 @@ export default function ChannelsScreen() {
                     setGroup('');
                     setModelKeyword('');
                     setStatusFilter('all');
-                    void load(1);
+                    setAppliedKeyword('');
+                    setAppliedGroup('');
+                    setAppliedModelKeyword('');
+                    setAppliedStatusFilter('all');
                   }}
                   disabled={busy}
                 />

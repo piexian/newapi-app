@@ -149,6 +149,15 @@ export default function AdminUsersScreen() {
   const [group, setGroup] = useState('');
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
 
+  // applied*：已提交的搜索条件。输入/下拉直接改 draft，
+  // 只有点"搜索/重置"时提交到 applied，load 依赖 applied，
+  // 避免每次键入或切换分组都触发网络请求。
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedGroup, setAppliedGroup] = useState('');
+
+  // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应。
+  const requestSeq = useRef(0);
+
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingDetail, setEditingDetail] = useState<AnyRecord | null>(null);
@@ -170,11 +179,13 @@ export default function AdminUsersScreen() {
 
   const load = useCallback(
     async (nextPage = 1, filters?: { keyword?: string; group?: string }) => {
+      const seq = ++requestSeq.current;
       setError('');
       setBusy(true);
       try {
-        const kw = (filters?.keyword ?? keyword).trim();
-        const g = (filters?.group ?? group).trim();
+        // 当显式传 filters 时（重置按钮），优先用 filters 的值；否则用 applied*
+        const kw = (filters?.keyword ?? appliedKeyword).trim();
+        const g = (filters?.group ?? appliedGroup).trim();
         const searching = !!kw || !!g;
         const res = await api.request({
           path: searching ? '/api/user/search' : '/api/user/',
@@ -185,6 +196,7 @@ export default function AdminUsersScreen() {
             group: g || undefined,
           },
         });
+        if (seq !== requestSeq.current) return;
         const err = getApiError(res.body);
         if (err) {
           setError(err);
@@ -208,12 +220,13 @@ export default function AdminUsersScreen() {
 
         if (!res.ok) setError(`请求失败：HTTP ${res.status}`);
       } catch (e) {
+        if (seq !== requestSeq.current) return;
         setError(e instanceof Error ? e.message : '请求失败');
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
-    [api, group, keyword, pageSize]
+    [api, appliedGroup, appliedKeyword, pageSize]
   );
 
   const fetchGroups = useCallback(async () => {
@@ -239,6 +252,8 @@ export default function AdminUsersScreen() {
   const resetFilters = useCallback(() => {
     setKeyword('');
     setGroup('');
+    setAppliedKeyword('');
+    setAppliedGroup('');
     // 传入清空后的值直接加载，避免依赖 state 更新时序
     void load(1, { keyword: '', group: '' });
   }, [load]);
@@ -534,7 +549,10 @@ export default function AdminUsersScreen() {
                   icon="search"
                   variant="secondary"
                   style={styles.flexBtn}
-                  onPress={() => load(1)}
+                  onPress={() => {
+                    setAppliedKeyword(keyword);
+                    setAppliedGroup(group);
+                  }}
                   disabled={busy}
                 />
                 <AppButton

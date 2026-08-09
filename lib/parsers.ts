@@ -101,7 +101,7 @@ export function parseUsers(body: unknown): User[] {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
     const username = getString(it, ['username']) ?? '';
-    if (!id || !username) return null;
+    if (id === undefined || !username) return null;
 
     const deletedAtRaw = (it as AnyRecord).DeletedAt ?? (it as AnyRecord).deleted_at;
     let deletedAt: string | null | undefined = undefined;
@@ -146,7 +146,7 @@ export function parseTokens(body: unknown): Token[] {
   const mapped: Array<Token | null> = arr.map((it) => {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
-    if (!id) return null;
+    if (id === undefined) return null;
     return {
       id,
       name: getString(it, ['name']) ?? undefined,
@@ -188,7 +188,7 @@ export function parseLogs(body: unknown): LogItem[] {
   const mapped: Array<LogItem | null> = arr.map((it) => {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
-    if (!id) return null;
+    if (id === undefined) return null;
     return {
       id,
       type: getNumber(it, ['type']) ?? undefined,
@@ -245,20 +245,6 @@ export function parseLogStat(body: unknown): Record<string, number> {
   return out;
 }
 
-export function parseDataSelf(body: unknown): Record<string, number> {
-  const data = unwrapApiData(body);
-  if (!isRecord(data)) return {};
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(data)) {
-    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
-    if (typeof v === 'string' && v.trim()) {
-      const n = Number(v);
-      if (Number.isFinite(n)) out[k] = n;
-    }
-  }
-  return out;
-}
-
 export type TopupRecord = {
   id: number;
   quota?: number;
@@ -274,7 +260,7 @@ export function parseTopupRecords(body: unknown): TopupRecord[] {
   const mapped: Array<TopupRecord | null> = arr.map((it) => {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
-    if (!id) return null;
+    if (id === undefined) return null;
     return {
       id,
       name: getString(it, ['name']) ?? undefined,
@@ -381,7 +367,7 @@ export function parseRedemptions(body: unknown): Redemption[] {
   const mapped: Array<Redemption | null> = arr.map((it) => {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
-    if (!id) return null;
+    if (id === undefined) return null;
     return {
       id,
       userId: getNumber(it, ['user_id']) ?? undefined,
@@ -404,7 +390,7 @@ export function parseChannels(body: unknown): Channel[] {
   const mapped: Array<Channel | null> = arr.map((it) => {
     if (!isRecord(it)) return null;
     const id = getNumber(it, ['id']);
-    if (!id) return null;
+    if (id === undefined) return null;
     const baseUrl = getString(it, ['base_url']) ?? undefined;
     const tag = getString(it, ['tag']) ?? undefined;
     const remark = getString(it, ['remark']) ?? undefined;

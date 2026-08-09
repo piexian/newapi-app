@@ -94,6 +94,18 @@ export default function LogsScreen() {
   const [startTs, setStartTs] = useState(String(todayStartSeconds()));
   const [endTs, setEndTs] = useState(String(nowSeconds()));
 
+  // applied*：已提交的筛选条件。文本输入直接改的是上面的 draft（tokenName/modelName/group/startTs/endTs），
+  // 只有点"查询/重置"时才把 draft 提交到 applied，load/effect 依赖 applied，
+  // 从而避免每个字符都触发一次网络请求。
+  const [applied, setApplied] = useState(() => ({
+    logType,
+    tokenName,
+    modelName,
+    group,
+    startTs,
+    endTs,
+  }));
+
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLog, setDetailsLog] = useState<(typeof logs)[number] | null>(null);
   const [error, setError] = useState('');
@@ -105,20 +117,24 @@ export default function LogsScreen() {
   }, []);
 
   const queryParams = useMemo(() => {
-    const startNum = startTs.trim() ? Number(startTs.trim()) : undefined;
-    const endNum = endTs.trim() ? Number(endTs.trim()) : undefined;
+    const startNum = applied.startTs.trim() ? Number(applied.startTs.trim()) : undefined;
+    const endNum = applied.endTs.trim() ? Number(applied.endTs.trim()) : undefined;
     return {
-      type: logType ? logType : undefined,
-      token_name: tokenName.trim() ? tokenName.trim() : undefined,
-      model_name: modelName.trim() ? modelName.trim() : undefined,
-      group: group.trim() ? group.trim() : undefined,
+      type: applied.logType ? applied.logType : undefined,
+      token_name: applied.tokenName.trim() ? applied.tokenName.trim() : undefined,
+      model_name: applied.modelName.trim() ? applied.modelName.trim() : undefined,
+      group: applied.group.trim() ? applied.group.trim() : undefined,
       start_timestamp: Number.isFinite(startNum) ? startNum : undefined,
       end_timestamp: Number.isFinite(endNum) ? endNum : undefined,
     } as const;
-  }, [endTs, group, logType, modelName, startTs, tokenName]);
+  }, [applied]);
+
+  // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应，消除慢请求覆盖快请求的竞态。
+  const requestSeq = useRef(0);
 
   const load = useCallback(
     async (nextPage = 1) => {
+      const seq = ++requestSeq.current;
       setError('');
       setBusy(true);
       try {
@@ -131,6 +147,7 @@ export default function LogsScreen() {
             query: { ...queryParams, p: nextPage, page_size: pageSize },
           }),
         ]);
+        if (seq !== requestSeq.current) return;
 
         const statEnv = statRes.body as unknown;
         if (isRecord(statEnv) && typeof statEnv.success === 'boolean' && statEnv.success === false) {
@@ -154,17 +171,44 @@ export default function LogsScreen() {
         if (!statRes.ok) setError(`stat 失败：HTTP ${statRes.status}`);
         if (!logsRes.ok) setError((prev) => prev || `logs 失败：HTTP ${logsRes.status}`);
       } catch (e) {
+        if (seq !== requestSeq.current) return;
         setError(e instanceof Error ? e.message : '请求失败');
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
     [api, isAdmin, pageSize, queryParams]
   );
 
+  // 提交当前 draft 为 applied 并查询第 1 页
+  const applyFilters = useCallback(() => {
+    setApplied({ logType, tokenName, modelName, group, startTs, endTs });
+  }, [logType, tokenName, modelName, group, startTs, endTs]);
+
+  const resetFilters = useCallback(() => {
+    const next = {
+      logType: 0,
+      tokenName: '',
+      modelName: '',
+      group: '',
+      startTs: String(todayStartSeconds()),
+      endTs: String(nowSeconds()),
+    };
+    setLogType(0);
+    setTokenName('');
+    setModelName('');
+    setGroup('');
+    setStartTs(next.startTs);
+    setEndTs(next.endTs);
+    setApplied(next);
+  }, []);
+
   const applyToday = useCallback(() => {
-    setStartTs(String(todayStartSeconds()));
-    setEndTs(String(nowSeconds()));
+    const start = String(todayStartSeconds());
+    const end = String(nowSeconds());
+    setStartTs(start);
+    setEndTs(end);
+    setApplied((a) => ({ ...a, startTs: start, endTs: end }));
   }, []);
 
   const applyRange = useCallback((days: number) => {
@@ -172,6 +216,7 @@ export default function LogsScreen() {
     const start = end - days * 24 * 3600;
     setStartTs(String(start));
     setEndTs(String(end));
+    setApplied((a) => ({ ...a, startTs: String(start), endTs: String(end) }));
   }, []);
 
   const maxPage = useMemo(() => {
@@ -435,21 +480,13 @@ export default function LogsScreen() {
               </View>
 
               <View style={styles.inlineRow}>
-                <AppButton label="查询" icon="search" compact loading={busy} onPress={() => load(1)} />
+                <AppButton label="查询" icon="search" compact loading={busy} onPress={applyFilters} />
                 <AppButton
                   label="重置"
                   icon="restart-alt"
                   variant="secondary"
                   compact
-                  onPress={() => {
-                    setLogType(0);
-                    setTokenName('');
-                    setModelName('');
-                    setGroup('');
-                    setStartTs(String(todayStartSeconds()));
-                    setEndTs(String(nowSeconds()));
-                    void load(1);
-                  }}
+                  onPress={resetFilters}
                   disabled={busy}
                 />
               </View>
@@ -479,9 +516,10 @@ export default function LogsScreen() {
               <View style={styles.chipRow}>
                 {[10, 20, 50].map((s) =>
                   renderChip(`${s}/页`, pageSize === s, () => {
+                    // 只更新状态，不再手动 load：pageSize 变化会让 load 重建，[load] effect 自动以新 pageSize 查询第 1 页，
+                    // 避免旧闭包里带旧 pageSize 触发一次错误请求。
                     setPageSize(s);
                     setPage(1);
-                    void load(1);
                   })
                 )}
               </View>

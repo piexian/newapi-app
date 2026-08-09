@@ -66,6 +66,8 @@ export default function SettingsScreen() {
     try {
       await setBaseUrl(next);
       setSavedMessage('服务器地址已保存');
+    } catch (error) {
+      setUrlError(error instanceof Error ? error.message : '保存失败，请重试');
     } finally {
       setBusyAction(null);
     }
@@ -84,6 +86,8 @@ export default function SettingsScreen() {
     try {
       await setCredentials({ userId: nextUserId, accessToken: nextToken });
       setSavedMessage('访问凭据已更新');
+    } catch (error) {
+      setIdentityError(error instanceof Error ? error.message : '保存失败，请重试');
     } finally {
       setBusyAction(null);
     }

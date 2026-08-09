@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { storageKeys } from '@/lib/keys';
+import { getAccessToken, removeAccessToken, setAccessToken } from '@/lib/secure-storage';
 import { getItem, removeItem, setItem } from '@/lib/storage';
 import { joinUrl } from '@/lib/url';
 
@@ -27,7 +28,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const [userId, accessToken] = await Promise.all([
         getItem(storageKeys.userId),
-        getItem(storageKeys.accessToken),
+        getAccessToken(),
       ]);
       if (canceled) return;
       setState({
@@ -45,7 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, ...next }));
     if (typeof next.userId === 'string') await setItem(storageKeys.userId, next.userId.trim());
     if (typeof next.accessToken === 'string') {
-      await setItem(storageKeys.accessToken, next.accessToken.trim());
+      await setAccessToken(next.accessToken.trim());
     }
   }, []);
 
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // ignore
     }
     setState({ userId: '', accessToken: '' });
-    await Promise.all([removeItem(storageKeys.userId), removeItem(storageKeys.accessToken)]);
+    await Promise.all([removeItem(storageKeys.userId), removeAccessToken()]);
   }, []);
 
   const isSignedIn = !!state.userId && !!state.accessToken;

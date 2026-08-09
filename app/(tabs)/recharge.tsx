@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,11 @@ function parsePositiveInt(text: string): number | null {
   return n;
 }
 
+// 仅允许 http/https，拒绝 javascript:/data: 等可执行协议，防止后端返回或被篡改的恶意地址在 WebView 内执行
+function isSafeHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
 export default function RechargeScreen() {
   const api = useApi();
   const { colors, shadow } = useAppTheme();
@@ -58,6 +63,10 @@ export default function RechargeScreen() {
   const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
   const [keyword, setKeyword] = useState('');
+  // appliedKeyword：已提交的搜索关键字。文本输入直接改的是 keyword（draft），
+  // 只有点"搜索"时才把 draft 提交到 appliedKeyword，load 依赖 appliedKeyword，
+  // 从而避免每个字符都触发一次网络请求。
+  const [appliedKeyword, setAppliedKeyword] = useState('');
 
   const [redemptionCode, setRedemptionCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
@@ -99,8 +108,12 @@ export default function RechargeScreen() {
     return uniq.slice(0, 12);
   }, [minTopup, topupInfo?.amountOptions]);
 
+  // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应，消除慢请求覆盖快请求的竞态。
+  const requestSeq = useRef(0);
+
   const load = useCallback(
     async (nextPage = 1) => {
+      const seq = ++requestSeq.current;
       setError('');
       setBusy(true);
       try {
@@ -112,7 +125,7 @@ export default function RechargeScreen() {
             query: {
               p: nextPage,
               page_size: pageSize,
-              keyword: keyword.trim() ? keyword.trim() : undefined,
+              keyword: appliedKeyword.trim() ? appliedKeyword.trim() : undefined,
             },
           }),
           api.request({
@@ -120,6 +133,8 @@ export default function RechargeScreen() {
             auth: { sendAccessToken: false, sendUserId: false },
           }),
         ]);
+
+        if (seq !== requestSeq.current) return;
 
         const userEnv = userRes.body as unknown;
         const infoEnv = infoRes.body as unknown;
@@ -171,12 +186,13 @@ export default function RechargeScreen() {
         if (!recordsRes.ok) setError((prev) => prev || `充值记录失败：HTTP ${recordsRes.status}`);
         if (!statusRes.ok) setError((prev) => prev || `系统状态失败：HTTP ${statusRes.status}`);
       } catch (e) {
+        if (seq !== requestSeq.current) return;
         setError(e instanceof Error ? e.message : '请求失败');
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
-    [api, keyword, pageSize]
+    [api, appliedKeyword, pageSize]
   );
 
   useEffect(() => {
@@ -367,6 +383,10 @@ export default function RechargeScreen() {
               setError('拉起支付失败：未返回 url/data');
               return;
             }
+            if (!isSafeHttpUrl(url)) {
+              setError('拉起支付失败：支付地址不合法');
+              return;
+            }
             setWebPayHtml(buildAutoPostHtml(url, params));
             setWebPayOpen(true);
           } catch (e) {
@@ -418,7 +438,9 @@ export default function RechargeScreen() {
   const canOnlineTopup = !!payMethods.length;
   const canCreemTopup = !!topupInfo?.enableCreemTopup && !!topupInfo?.creemProducts?.length;
   const canPrev = page > 1;
-  const canNext = total <= 0 ? records.length >= pageSize : page * pageSize < total;
+  // total 未知（0）时退化为"本页是否满"推断；已知时用总页数判断
+  const maxPage = total > 0 ? Math.max(1, Math.ceil(total / Math.max(1, pageSize))) : Infinity;
+  const canNext = total <= 0 ? records.length >= pageSize : page < maxPage;
 
   const pagerInfo = useMemo(() => {
     if (!total) return `第 ${page} 页`;
@@ -664,7 +686,7 @@ export default function RechargeScreen() {
                   icon="search"
                   variant="secondary"
                   compact
-                  onPress={() => load(1)}
+                  onPress={() => setAppliedKeyword(keyword)}
                   disabled={busy}
                 />
               </View>
@@ -706,7 +728,7 @@ export default function RechargeScreen() {
       <FloatingPageControls
         onPrev={() => load(Math.max(1, page - 1))}
         onRefresh={() => load(page)}
-        onNext={() => load(page + 1)}
+        onNext={() => load(Math.min(maxPage, page + 1))}
         disabledPrev={busy || redeeming || paying || !canPrev}
         disabledRefresh={busy || redeeming || paying}
         disabledNext={busy || redeeming || paying || !canNext}
@@ -736,7 +758,11 @@ export default function RechargeScreen() {
             </View>
             <View style={styles.webWrap}>
               <WebView
-                originWhitelist={['*']}
+                originWhitelist={['http://*', 'https://*']}
+                onShouldStartLoadWithRequest={(request) => {
+                  // 仅放行 http/https 导航，拦截其他协议（如 tel:/intent:/javascript:）
+                  return isSafeHttpUrl(request.url);
+                }}
                 source={{ html: webPayHtml }}
                 startInLoadingState
                 renderLoading={() => (
