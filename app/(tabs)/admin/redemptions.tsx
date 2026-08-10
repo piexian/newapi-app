@@ -8,6 +8,7 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { ScrollTopButton } from '@/components/ui/scroll-top-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
@@ -85,6 +86,8 @@ export default function RedemptionsScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const listRef = useRef<FlatList<ReturnType<typeof parseRedemptions>[number]>>(null);
+  const [showTop, setShowTop] = useState(false);
 
   const showSuccess = useCallback((message: string) => {
     setSuccess(message);
@@ -343,6 +346,9 @@ export default function RedemptionsScreen() {
     <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <FlatList
         style={styles.list}
+        ref={listRef}
+        onScroll={(e) => setShowTop(e.nativeEvent.contentOffset.y > 480)}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 96 }, // 底部预留浮动分页栏空间
@@ -560,6 +566,11 @@ export default function RedemptionsScreen() {
         ListEmptyComponent={
           <EmptyState title="暂无兑换码" description="生成兑换码后会显示在这里。" icon="confirmation-number" />
         }
+      />
+
+      <ScrollTopButton
+        visible={showTop}
+        onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
       />
 
       <FloatingPageControls

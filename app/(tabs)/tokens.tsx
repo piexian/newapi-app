@@ -1,10 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -22,6 +24,7 @@ import { parseTokens } from '@/lib/parsers';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { unwrapApiData } from '@/lib/unwrap';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { ScrollTopButton } from '@/components/ui/scroll-top-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { useStatus } from '@/providers/status-provider';
@@ -99,6 +102,9 @@ export default function TokensScreen() {
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
 
+  const listRef = useRef<FlatList<ReturnType<typeof parseTokens>[number]>>(null);
+  const [showTop, setShowTop] = useState(false);
+
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingKey, setEditingKey] = useState<string>('');
@@ -111,7 +117,10 @@ export default function TokensScreen() {
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [modelLimitInput, setModelLimitInput] = useState('');
   const [ipWhitelistInput, setIpWhitelistInput] = useState('');
-  const [extraJson, setExtraJson] = useState('{\n  "cross_group_retry": false\n}\n');
+  const [extraJson, setExtraJson] = useState('');
+  const [crossGroupRetry, setCrossGroupRetry] = useState(false);
+  // 其它未知高级字段的 JSON 编辑区默认折叠，仅在已有未知字段或用户主动展开时显示
+  const [extraOpen, setExtraOpen] = useState(false);
 
   const load = useCallback(
     async (nextPage = 1) => {
@@ -171,7 +180,9 @@ export default function TokensScreen() {
     setTokenGroupInput('');
     setModelLimitInput('');
     setIpWhitelistInput('');
-    setExtraJson('{\n  "cross_group_retry": false\n}\n');
+    setExtraJson('');
+    setCrossGroupRetry(false);
+    setExtraOpen(false);
     setFormOpen(true);
   }, []);
 
@@ -191,7 +202,9 @@ export default function TokensScreen() {
         setTokenGroupInput('');
         setModelLimitInput('');
         setIpWhitelistInput('');
-        setExtraJson('{\n  "cross_group_retry": false\n}\n');
+        setExtraJson('');
+        setCrossGroupRetry(false);
+        setExtraOpen(false);
 
         const detailRes = await api.request({ path: `/api/token/${id}` });
         const detailEnv = getApiEnvelope(detailRes.body);
@@ -261,11 +274,14 @@ export default function TokensScreen() {
         if (Array.isArray(ips)) setIpWhitelistInput(ips.filter((m) => typeof m === 'string').join('\n'));
         else if (typeof ips === 'string') setIpWhitelistInput(ips);
 
-        const crossGroupRetry =
+        const crossGroupRetryValue =
           typeof (detail as AnyRecord).cross_group_retry === 'boolean'
             ? ((detail as AnyRecord).cross_group_retry as boolean)
             : false;
-        setExtraJson(`${JSON.stringify({ ...extra, cross_group_retry: crossGroupRetry }, null, 2)}\n`);
+        setCrossGroupRetry(crossGroupRetryValue);
+        const extraKeys = Object.keys(extra);
+        setExtraJson(extraKeys.length ? `${JSON.stringify(extra, null, 2)}\n` : '');
+        setExtraOpen(extraKeys.length > 0);
         setFormOpen(true);
 
         if (!detailRes.ok) setError(`获取令牌详情失败：HTTP ${detailRes.status}`);
@@ -308,10 +324,9 @@ export default function TokensScreen() {
 
       const extra = safeParseJsonObject(extraJson);
       if (extra === null) {
-        setFormError('高级 JSON 格式不正确');
+        setFormError('其它高级字段 JSON 格式不正确');
         return;
       }
-      const crossGroupRetry = typeof extra.cross_group_retry === 'boolean' ? (extra.cross_group_retry as boolean) : false;
 
       const modelRaw = modelLimitInput.trim();
       let modelList: string[] = [];
@@ -363,11 +378,9 @@ export default function TokensScreen() {
             ? (base.remain_quota as number)
             : 0;
 
-      // 合并策略：base（服务端现有字段，编辑时保留）→ extra（用户在高级 JSON 里显式编辑的字段）→ 表单字段（最高优先级，覆盖前两者）。
-      // 此前只取固定键、丢弃 base/extra，导致用户在"高级字段(JSON)"的编辑不被保存，也丢失后端返回的其它字段。
+      // 合并策略：base（服务端现有字段，编辑时保留）→ extra（其它高级 JSON 字段）→ 表单字段（最高优先级，覆盖前两者）。
       // 删除 extra 里被表单字段接管的键，避免被 base 的旧值覆盖表单意图。
       const {
-        cross_group_retry: _extraCrossGroupRetry,
         group: _extraGroup,
         model_limits: _extraModelLimits,
         allow_ips: _extraAllowIps,
@@ -414,6 +427,7 @@ export default function TokensScreen() {
     }
   }, [
     api,
+    crossGroupRetry,
     editingId,
     expiredTimeInput,
     extraJson,
@@ -503,6 +517,9 @@ export default function TokensScreen() {
       behavior={Platform.select({ ios: 'padding', default: undefined })}>
       <FlatList
         style={styles.list}
+        ref={listRef}
+        onScroll={(e) => setShowTop(e.nativeEvent.contentOffset.y > 480)}
+        scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.container,
@@ -519,12 +536,137 @@ export default function TokensScreen() {
               </View>
             </View>
             {!!error && <InlineNotice message={error} />}
-            {formOpen && (
-              <Surface style={styles.formCard}>
-                <Text style={[styles.formTitle, { color: colors.ink }]}>
-                  {editingId ? `编辑 Token #${editingId}` : '新增令牌'}
+            <View style={styles.summaryRow}>
+              <Surface style={styles.summaryCard}>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>令牌数量</Text>
+                <Text style={[styles.summaryValue, { color: colors.ink }]}>{total || tokens.length}</Text>
+              </Surface>
+              <Surface style={styles.summaryCard}>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>剩余额度</Text>
+                <Text style={[styles.summaryValue, { color: colors.ink }]}>
+                  {formatQuota(totalRemain, quota ?? undefined)}
                 </Text>
-                <Text style={[styles.sectionTitle, { color: colors.ink }]}>基本信息</Text>
+              </Surface>
+            </View>
+            <Text style={[styles.listTitle, { color: colors.ink }]}>列表</Text>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <Surface style={styles.item}>
+            <View style={styles.itemTop}>
+              <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1} ellipsizeMode="tail">
+                {item.name || `Token #${item.id}`}
+              </Text>
+              <Badge
+                text={
+                  item.status === 1
+                    ? '启用'
+                    : item.status === 2
+                      ? '禁用'
+                      : item.status === 3
+                        ? '已过期'
+                        : item.status === 4
+                          ? '已耗尽'
+                          : `状态 ${item.status ?? '—'}`
+                }
+                tone={
+                  item.status === 1
+                    ? 'success'
+                    : item.status === 2
+                      ? 'neutral'
+                      : item.status === 3
+                        ? 'warning'
+                        : 'danger'
+                }
+              />
+            </View>
+            <View style={styles.opsRow}>
+              <AppButton
+                label={item.status === 1 ? '禁用' : '启用'}
+                icon={item.status === 1 ? 'block' : 'check-circle'}
+                variant={item.status === 1 ? 'danger' : 'primary'}
+                compact
+                onPress={() => toggleStatus(item.id, item.status !== 1)}
+                disabled={busy}
+              />
+              <AppButton
+                label="编辑"
+                icon="edit"
+                variant="secondary"
+                compact
+                onPress={() => openEdit(item.id)}
+                disabled={busy}
+              />
+              <AppButton
+                label="删除"
+                icon="delete-outline"
+                variant="danger"
+                compact
+                onPress={() => deleteToken(item.id)}
+                disabled={busy}
+              />
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>Key</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>{maskKey(item.key)}</Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>剩余额度</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>
+                {item.unlimitedQuota ? '无限制' : formatQuota(item.remainQuota, quota ?? undefined)}
+              </Text>
+            </View>
+            <View style={styles.metaRow}>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>到期</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>
+                {formatDateTimeEpochSeconds(item.expiredTime)}
+              </Text>
+            </View>
+          </Surface>
+        )}
+        ListEmptyComponent={
+          <EmptyState title="暂无令牌" description="创建一个访问令牌，或刷新列表后重试。" icon="vpn-key" />
+        }
+      />
+
+      <Modal
+        transparent
+        visible={formOpen}
+        animationType="slide"
+        onRequestClose={() => setFormOpen(false)}
+      >
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: colors.overlay },
+            { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
+          ]}
+        >
+          <Surface style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>
+                {editingId ? `编辑 Token #${editingId}` : '新增令牌'}
+              </Text>
+              <View style={styles.modalHeaderActions}>
+                <AppButton label="关闭" variant="secondary" compact onPress={() => setFormOpen(false)} disabled={busy} />
+                <AppButton
+                  label={busy ? '保存中…' : '保存'}
+                  variant="primary"
+                  compact
+                  onPress={saveToken}
+                  disabled={busy}
+                />
+              </View>
+            </View>
+
+            {!!formError && <InlineNotice message={formError} />}
+
+            {/* Android 已设 adjustPan（窗口整体上移），iOS 用 padding 避让键盘 */}
+            <KeyboardAvoidingView
+              style={styles.modalKav}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
                 {!!editingKey && (
                   <View style={styles.formRow}>
                     <Text style={[styles.formLabel, { color: colors.muted }]}>Key</Text>
@@ -728,127 +870,58 @@ export default function TokensScreen() {
                 </View>
 
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
-                <Text style={[styles.sectionTitle, { color: colors.ink }]}>高级字段（JSON）</Text>
-                <TextInput
-                  value={extraJson}
-                  onChangeText={setExtraJson}
-                  placeholder={'{\n  "note": "..."\n}'}
-                  placeholderTextColor={colors.subtle}
-                  selectionColor={colors.accent}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  multiline
-                  style={[
-                    styles.input,
-                    styles.textArea,
-                    { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
-                  ]}
-                  textAlignVertical="top"
-                />
-                {!!formError && <InlineNotice message={formError} />}
-                <View style={styles.formActions}>
-                  <AppButton label="保存令牌" icon="save" loading={busy} onPress={saveToken} />
-                  <AppButton
-                    label="取消"
-                    icon="close"
-                    variant="secondary"
-                    onPress={() => setFormOpen(false)}
-                    disabled={busy}
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>高级</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>跨分组重试</Text>
+                  <Switch
+                    value={crossGroupRetry}
+                    onValueChange={setCrossGroupRetry}
+                    trackColor={{ true: colors.accent, false: colors.borderStrong }}
+                    thumbColor={crossGroupRetry ? colors.onAccent : colors.surface}
+                    accessibilityLabel="跨分组重试"
                   />
                 </View>
-              </Surface>
-            )}
-            <View style={styles.summaryRow}>
-              <Surface style={styles.summaryCard}>
-                <Text style={[styles.summaryLabel, { color: colors.muted }]}>令牌数量</Text>
-                <Text style={[styles.summaryValue, { color: colors.ink }]}>{total || tokens.length}</Text>
-              </Surface>
-              <Surface style={styles.summaryCard}>
-                <Text style={[styles.summaryLabel, { color: colors.muted }]}>剩余额度</Text>
-                <Text style={[styles.summaryValue, { color: colors.ink }]}>
-                  {formatQuota(totalRemain, quota ?? undefined)}
-                </Text>
-              </Surface>
-            </View>
-            <Text style={[styles.listTitle, { color: colors.ink }]}>列表</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <Surface style={styles.item}>
-            <View style={styles.itemTop}>
-              <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1} ellipsizeMode="tail">
-                {item.name || `Token #${item.id}`}
-              </Text>
-              <Badge
-                text={
-                  item.status === 1
-                    ? '启用'
-                    : item.status === 2
-                      ? '禁用'
-                      : item.status === 3
-                        ? '已过期'
-                        : item.status === 4
-                          ? '已耗尽'
-                          : `状态 ${item.status ?? '—'}`
-                }
-                tone={
-                  item.status === 1
-                    ? 'success'
-                    : item.status === 2
-                      ? 'neutral'
-                      : item.status === 3
-                        ? 'warning'
-                        : 'danger'
-                }
-              />
-            </View>
-            <View style={styles.opsRow}>
-              <AppButton
-                label={item.status === 1 ? '禁用' : '启用'}
-                icon={item.status === 1 ? 'block' : 'check-circle'}
-                variant={item.status === 1 ? 'danger' : 'primary'}
-                compact
-                onPress={() => toggleStatus(item.id, item.status !== 1)}
-                disabled={busy}
-              />
-              <AppButton
-                label="编辑"
-                icon="edit"
-                variant="secondary"
-                compact
-                onPress={() => openEdit(item.id)}
-                disabled={busy}
-              />
-              <AppButton
-                label="删除"
-                icon="delete-outline"
-                variant="danger"
-                compact
-                onPress={() => deleteToken(item.id)}
-                disabled={busy}
-              />
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={[styles.metaKey, { color: colors.muted }]}>Key</Text>
-              <Text style={[styles.metaVal, { color: colors.ink }]}>{maskKey(item.key)}</Text>
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={[styles.metaKey, { color: colors.muted }]}>剩余额度</Text>
-              <Text style={[styles.metaVal, { color: colors.ink }]}>
-                {item.unlimitedQuota ? '无限制' : formatQuota(item.remainQuota, quota ?? undefined)}
-              </Text>
-            </View>
-            <View style={styles.metaRow}>
-              <Text style={[styles.metaKey, { color: colors.muted }]}>到期</Text>
-              <Text style={[styles.metaVal, { color: colors.ink }]}>
-                {formatDateTimeEpochSeconds(item.expiredTime)}
-              </Text>
-            </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>其它字段</Text>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.quickBtn,
+                      { borderColor: colors.border, backgroundColor: colors.surface },
+                      pressed ? { backgroundColor: colors.surfaceMuted } : null,
+                    ]}
+                    onPress={() => setExtraOpen((v) => !v)}>
+                    <Text style={[styles.quickText, { color: colors.ink }]}>
+                      {extraOpen ? '收起 JSON 编辑' : '展开 JSON 编辑'}
+                    </Text>
+                  </Pressable>
+                </View>
+                {extraOpen && (
+                  <TextInput
+                    value={extraJson}
+                    onChangeText={setExtraJson}
+                    placeholder={'{\n  "note": "..."\n}'}
+                    placeholderTextColor={colors.subtle}
+                    selectionColor={colors.accent}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    multiline
+                    style={[
+                      styles.input,
+                      styles.textArea,
+                      { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                    ]}
+                    textAlignVertical="top"
+                  />
+                )}
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Surface>
-        )}
-        ListEmptyComponent={
-          <EmptyState title="暂无令牌" description="创建一个访问令牌，或刷新列表后重试。" icon="vpn-key" />
-        }
+        </View>
+      </Modal>
+
+      <ScrollTopButton
+        visible={showTop}
+        onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
       />
 
       <FloatingPageControls
@@ -897,13 +970,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
-  formCard: {
-    gap: 10,
+  modalOverlay: {
+    flex: 1,
+    paddingHorizontal: 12,
+    justifyContent: 'flex-end',
   },
-  formTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  modalCard: { maxHeight: '92%', padding: 12, gap: 12 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  modalTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
+  modalHeaderActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  modalKav: { flex: 1 },
+  modalBody: { paddingBottom: 12, gap: 10 },
   sectionTitle: {
     marginTop: 6,
     fontSize: 13,
@@ -927,12 +1004,6 @@ const styles = StyleSheet.create({
   formInput: {
     flex: 1,
     minWidth: 0,
-  },
-  formActions: {
-    marginTop: 4,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
   },
   divider: {
     height: StyleSheet.hairlineWidth,

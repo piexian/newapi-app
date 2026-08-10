@@ -19,6 +19,7 @@ import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { ScrollTopButton } from '@/components/ui/scroll-top-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
@@ -157,6 +158,8 @@ export default function AdminUsersScreen() {
 
   // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应。
   const requestSeq = useRef(0);
+  const listRef = useRef<FlatList<User>>(null);
+  const [showTop, setShowTop] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -497,6 +500,9 @@ export default function AdminUsersScreen() {
     <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <FlatList
         style={styles.list}
+        ref={listRef}
+        onScroll={(e) => setShowTop(e.nativeEvent.contentOffset.y > 480)}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 96 }, // 底部预留浮动分页栏空间
@@ -724,6 +730,11 @@ export default function AdminUsersScreen() {
         ListEmptyComponent={
           <EmptyState title="暂无用户" description="调整搜索条件，或刷新后重试。" icon="group" />
         }
+      />
+
+      <ScrollTopButton
+        visible={showTop}
+        onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
       />
 
       <FloatingPageControls

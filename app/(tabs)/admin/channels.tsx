@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { ScrollTopButton } from '@/components/ui/scroll-top-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
@@ -70,6 +71,24 @@ const CHANNEL_TYPE_NAMES: Record<number, string> = {
 function channelTypeLabel(type?: number) {
   if (typeof type !== 'number') return 'Unknown';
   return CHANNEL_TYPE_NAMES[type] ?? `Type ${type}`;
+}
+
+// 类型下拉选项："名称 (id)" 展示，选中后从括号解析回数字 id（排除 0=Unknown）
+const CHANNEL_TYPE_OPTIONS = Object.entries(CHANNEL_TYPE_NAMES)
+  .filter(([id]) => id !== '0')
+  .map(([id, name]) => `${name} (${id})`);
+
+function formatTypeOption(typeInput: string): string {
+  const t = typeInput.trim();
+  if (!t) return '';
+  const n = Number(t);
+  if (!Number.isFinite(n)) return '';
+  return `${channelTypeLabel(n)} (${n})`;
+}
+
+function parseTypeOption(option: string): string {
+  const m = option.match(/\((\d+)\)\s*$/);
+  return m ? m[1] : '';
 }
 
 function statusLabel(status?: number) {
@@ -190,6 +209,8 @@ export default function ChannelsScreen() {
 
   // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应。
   const requestSeq = useRef(0);
+  const listRef = useRef<FlatList<ReturnType<typeof parseChannels>[number]>>(null);
+  const [showTop, setShowTop] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -894,6 +915,9 @@ export default function ChannelsScreen() {
     <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <FlatList
         style={styles.list}
+        ref={listRef}
+        onScroll={(e) => setShowTop(e.nativeEvent.contentOffset.y > 480)}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.container,
           // 底部留白 96：给浮动分页控件留出空间（比原先 120 更紧凑）
@@ -1183,26 +1207,15 @@ export default function ChannelsScreen() {
                 </View>
 
                 <View style={styles.formRow}>
-                  <Text style={[styles.formLabel, { color: colors.muted }]}>Type*</Text>
-                  <ThemedTextInput
-                    value={typeInput}
-                    onChangeText={setTypeInput}
-                    placeholder="1"
-                    keyboardType="numeric"
-                    style={styles.flex1}
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>类型*</Text>
+                  <DropdownSelect
+                    title="选择渠道类型"
+                    value={formatTypeOption(typeInput)}
+                    onChange={(opt) => setTypeInput(parseTypeOption(opt))}
+                    options={CHANNEL_TYPE_OPTIONS}
+                    placeholder="选择类型"
+                    style={[styles.input, styles.flex1]}
                   />
-                </View>
-                <View style={styles.quickRow}>
-                  {[1, 3, 4, 14, 20, 24, 25, 43].map((t) => (
-                    <AppButton
-                      key={t}
-                      label={channelTypeLabel(t)}
-                      variant="secondary"
-                      compact
-                      onPress={() => setTypeInput(String(t))}
-                      disabled={busy}
-                    />
-                  ))}
                 </View>
 
                 <View style={styles.formRow}>
@@ -1509,6 +1522,11 @@ export default function ChannelsScreen() {
         </View>
       </Modal>
 
+      <ScrollTopButton
+        visible={showTop}
+        onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
+      />
+
       <FloatingPageControls
         onPrev={() => load(Math.max(1, page - 1))}
         onRefresh={() => load(page)}
@@ -1542,7 +1560,6 @@ const styles = StyleSheet.create({
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: Radius.pill, borderWidth: StyleSheet.hairlineWidth },
   chipText: { fontSize: 12, fontWeight: '600' },
-  quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   formLabel: { minWidth: 64, flexShrink: 0, fontSize: 12, fontWeight: '800' },
   input: {

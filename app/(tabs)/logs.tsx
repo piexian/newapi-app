@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { ScrollTopButton } from '@/components/ui/scroll-top-button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
@@ -131,6 +132,8 @@ export default function LogsScreen() {
 
   // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应，消除慢请求覆盖快请求的竞态。
   const requestSeq = useRef(0);
+  const listRef = useRef<FlatList<ReturnType<typeof parseLogs>[number]>>(null);
+  const [showTop, setShowTop] = useState(false);
 
   const load = useCallback(
     async (nextPage = 1) => {
@@ -386,13 +389,29 @@ export default function LogsScreen() {
               </Text>
 
               <Text style={[styles.modalSection, { color: colors.ink }]}>Other</Text>
-              <Text selectable style={[styles.mono, { color: colors.ink }]}>
-                {(() => {
-                  const parsed = safeParseJson(detailsLog?.other);
-                  if (parsed && typeof parsed === 'object') return `${JSON.stringify(parsed, null, 2)}\n`;
-                  return detailsLog?.other || '—';
-                })()}
-              </Text>
+              {(() => {
+                const parsed = safeParseJson(detailsLog?.other);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                  const entries = Object.entries(parsed as Record<string, unknown>);
+                  if (!entries.length) {
+                    return <Text style={[styles.mono, { color: colors.ink }]}>—</Text>;
+                  }
+                  // JSON 解析为键值行：嵌套对象/数组压成单行 JSON，标量直接展示
+                  return entries.map(([key, val]) => (
+                    <View style={styles.kvRow} key={key}>
+                      <Text style={[styles.k, { color: colors.muted }]}>{key}</Text>
+                      <Text selectable style={[styles.v, { color: colors.ink }]}>
+                        {val !== null && typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                      </Text>
+                    </View>
+                  ));
+                }
+                return (
+                  <Text selectable style={[styles.mono, { color: colors.ink }]}>
+                    {detailsLog?.other || '—'}
+                  </Text>
+                );
+              })()}
             </ScrollView>
           </View>
         </View>
@@ -400,6 +419,9 @@ export default function LogsScreen() {
 
       <FlatList
         style={styles.list}
+        ref={listRef}
+        onScroll={(e) => setShowTop(e.nativeEvent.contentOffset.y > 480)}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.container,
           { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
@@ -577,6 +599,11 @@ export default function LogsScreen() {
         ListEmptyComponent={
           <EmptyState title="暂无日志" description="调整筛选条件，或刷新后重试。" icon="receipt-long" />
         }
+      />
+
+      <ScrollTopButton
+        visible={showTop}
+        onPress={() => listRef.current?.scrollToOffset({ offset: 0, animated: true })}
       />
 
       <FloatingPageControls
