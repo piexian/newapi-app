@@ -37,7 +37,8 @@ jobs:
       - name: Install Android platform / build-tools / NDK
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null
+          # sdkmanager 提前退出时 yes 会 Broken pipe，pipefail 下会误判失败，故 || true
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
           # NDK 版本与本地验证过的成功构建保持一致
           sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
