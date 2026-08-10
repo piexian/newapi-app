@@ -2,7 +2,7 @@
   "expo": {
     "name": "newapi",
     "slug": "newapi-app",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "newapi",
@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.newapi.mobile",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/adaptive-icon.png",
