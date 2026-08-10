@@ -49,6 +49,16 @@ jobs:
       - name: Prebuild android/ (应用 config plugins，含 ABI 拆分)
         run: npx expo prebuild --platform android --clean
 
+      - name: Sync versionName from git tag
+        # 打 tag 发版时以 tag 为准（v1.2.1 -> 1.2.1），避免 app.json 版本号忘了改导致 APK 显示旧版本；
+        # versionCode 仍取 app.json（发包前需递增，ABI 拆分后实际 code = versionCode*10 + ABI 偏移）
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" android/app/build.gradle
+          grep versionName android/app/build.gradle
+
       - name: Decode release keystore from secrets
         # ANDROID_KEYSTORE_BASE64 = release.keystore 的 base64（见仓库 Secrets 配置说明）
         env:
