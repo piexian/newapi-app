@@ -12,14 +12,9 @@ permissions:
 
 jobs:
   build-apk:
-    name: Build signed APK (EAS local)
+    name: Build signed ABI-split APKs
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      # 在仓库 Settings → Secrets and variables → Actions 配置 EXPO_TOKEN（expo.dev 的 Access Token）
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-      # 让 eas --local 把产物写到 ./dist
-      EAS_LOCAL_BUILD_ARTIFACTS_DIR: ${{ github.workspace }}/dist
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -44,28 +39,59 @@ jobs:
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null
           sdkmanager "platforms;android-35" "build-tools;35.0.0"
-          # NDK 版本由 Expo/RN 决定；--local 构建若缺对应版本会报具体缺失，可按日志补齐
+          # NDK 版本与本地验证过的成功构建保持一致
           sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install EAS CLI
-        run: npm install --location=global eas-cli
+      - name: Prebuild android/ (应用 config plugins，含 ABI 拆分)
+        run: npx expo prebuild --platform android --clean
 
-      - name: Verify EAS auth
-        run: eas whoami
+      - name: Decode release keystore from secrets
+        # ANDROID_KEYSTORE_BASE64 = release.keystore 的 base64（见仓库 Secrets 配置说明）
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          ls -la android/app/release.keystore
 
-      - name: Build APK locally with EAS-managed signing
-        # --local：在本 runner 构建（不占 EAS 云端队列），但签名 keystore 自动从 EAS 拉取，
-        # 因此产物与此前 EAS 云端发包签名一致，可直接覆盖安装。
-        # profile=preview 即 buildType=apk（见 eas.json），适合侧载分发。
-        run: eas build --platform android --profile preview --local --non-interactive --output ./dist/app-release.apk
+      - name: Build signed ABI-split APKs
+        # injected signing：不改 build.gradle，AGP 生成 externalOverride 签名配置；
+        # store.file 必须绝对路径（相对路径会相对 Gradle daemon 工作目录解析）。
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/android/app/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
-      - name: Upload APK artifact
+      - name: Verify APK signatures
+        run: |
+          set -euo pipefail
+          for apk in android/app/build/outputs/apk/release/*.apk; do
+            echo "== $apk =="
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | grep -E "certificate SHA-256|Signer"
+          done
+
+      - name: Collect APKs
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk dist/
+          ls -la dist/
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apk
+          name: app-release-apks
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 90

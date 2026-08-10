@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "com.newapi.mobile",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.newapi.mobile",
@@ -41,7 +44,8 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withAbiSplits.js"
     ],
     "experiments": {
       "typedRoutes": true,
