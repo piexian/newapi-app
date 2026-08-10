@@ -1,4 +1,5 @@
-import { Ionicons } from '@expo/vector-icons';
+// 从具体字体族路径导入，避免根入口 re-export 全部图标族导致 19 个 ttf 全打进包里
+import Ionicons from '@expo/vector-icons/Ionicons';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 

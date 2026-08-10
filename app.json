@@ -24,6 +24,7 @@
         "monochromeImage": "./assets/adaptive-icon.png"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "pan",
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -45,7 +46,8 @@
         }
       ],
       "expo-secure-store",
-      "./plugins/withAbiSplits.js"
+      "./plugins/withAbiSplits.js",
+      "./plugins/withReleaseOptimizations.js"
     ],
     "experiments": {
       "typedRoutes": true,
