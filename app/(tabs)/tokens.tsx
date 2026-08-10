@@ -1,17 +1,35 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApi } from '@/hooks/use-api';
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { Surface } from '@/components/ui/surface';
 import { formatDateTimeEpochSeconds, formatQuota } from '@/lib/format';
 import { parseTokens } from '@/lib/parsers';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { unwrapApiData } from '@/lib/unwrap';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { useStatus } from '@/providers/status-provider';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
+import { Layout, Radius } from '@/constants/theme';
+
+// 表单标签列固定宽度，使右列（输入/快捷按钮/说明）对齐；宽度足以容纳最长标签不换行
+const FORM_LABEL_WIDTH = 96;
 
 function maskKey(key?: string) {
   if (!key) return '—';
@@ -71,11 +89,12 @@ function parseNumberOrNull(input: string): number | null {
 export default function TokensScreen() {
   const api = useApi();
   const { quota } = useStatus();
-  const colorScheme = useColorScheme();
+  const { colors } = useAppTheme();
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<ReturnType<typeof parseTokens>>([]);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
@@ -92,15 +111,7 @@ export default function TokensScreen() {
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
   const [modelLimitInput, setModelLimitInput] = useState('');
   const [ipWhitelistInput, setIpWhitelistInput] = useState('');
-  const [extraJson, setExtraJson] = useState('{\n  \"cross_group_retry\": false\n}\n');
-
-  const inputStyle = useMemo(
-    () => [
-      styles.input,
-      colorScheme === 'dark' ? styles.inputDark : styles.inputLight,
-    ],
-    [colorScheme]
-  );
+  const [extraJson, setExtraJson] = useState('{\n  "cross_group_retry": false\n}\n');
 
   const load = useCallback(
     async (nextPage = 1) => {
@@ -160,7 +171,7 @@ export default function TokensScreen() {
     setTokenGroupInput('');
     setModelLimitInput('');
     setIpWhitelistInput('');
-    setExtraJson('{\n  \"cross_group_retry\": false\n}\n');
+    setExtraJson('{\n  "cross_group_retry": false\n}\n');
     setFormOpen(true);
   }, []);
 
@@ -180,7 +191,7 @@ export default function TokensScreen() {
         setTokenGroupInput('');
         setModelLimitInput('');
         setIpWhitelistInput('');
-        setExtraJson('{\n  \"cross_group_retry\": false\n}\n');
+        setExtraJson('{\n  "cross_group_retry": false\n}\n');
 
         const detailRes = await api.request({ path: `/api/token/${id}` });
         const detailEnv = getApiEnvelope(detailRes.body);
@@ -277,27 +288,27 @@ export default function TokensScreen() {
   }, []);
 
   const saveToken = useCallback(async () => {
-    setError('');
+    setFormError('');
     setBusy(true);
     try {
       const expired_time_raw = parseNumberOrNull(expiredTimeInput);
       const remain_quota_raw = parseNumberOrNull(remainQuotaInput);
       if (expiredTimeInput.trim() && expired_time_raw === null) {
-        setError('到期时间必须是数字（epoch seconds）');
+        setFormError('到期时间必须是数字（epoch seconds）');
         return;
       }
       if (remainQuotaInput.trim() && remain_quota_raw === null) {
-        setError('剩余额度必须是数字');
+        setFormError('剩余额度必须是数字');
         return;
       }
       if (!nameInput.trim()) {
-        setError('名称不能为空');
+        setFormError('名称不能为空');
         return;
       }
 
       const extra = safeParseJsonObject(extraJson);
       if (extra === null) {
-        setError('高级 JSON 格式不正确');
+        setFormError('高级 JSON 格式不正确');
         return;
       }
       const crossGroupRetry = typeof extra.cross_group_retry === 'boolean' ? (extra.cross_group_retry as boolean) : false;
@@ -325,11 +336,11 @@ export default function TokensScreen() {
         const detailRes = await api.request({ path: `/api/token/${editingId}` });
         const detailEnv = getApiEnvelope(detailRes.body);
         if (detailEnv && detailEnv.success === false) {
-          setError(detailEnv.message || '获取令牌详情失败');
+          setFormError(detailEnv.message || '获取令牌详情失败');
           return;
         }
         if (!detailRes.ok) {
-          setError(`获取令牌详情失败：HTTP ${detailRes.status}`);
+          setFormError(`获取令牌详情失败：HTTP ${detailRes.status}`);
           return;
         }
         const detailData = unwrapApiData(detailRes.body) as unknown;
@@ -352,7 +363,20 @@ export default function TokensScreen() {
             ? (base.remain_quota as number)
             : 0;
 
+      // 合并策略：base（服务端现有字段，编辑时保留）→ extra（用户在高级 JSON 里显式编辑的字段）→ 表单字段（最高优先级，覆盖前两者）。
+      // 此前只取固定键、丢弃 base/extra，导致用户在"高级字段(JSON)"的编辑不被保存，也丢失后端返回的其它字段。
+      // 删除 extra 里被表单字段接管的键，避免被 base 的旧值覆盖表单意图。
+      const {
+        cross_group_retry: _extraCrossGroupRetry,
+        group: _extraGroup,
+        model_limits: _extraModelLimits,
+        allow_ips: _extraAllowIps,
+        ...extraRest
+      } = extra;
+
       const payload: Record<string, unknown> = {
+        ...(editingId ? base : {}),
+        ...extraRest,
         ...(editingId ? { id: editingId } : {}),
         name: nameInput.trim(),
         status: statusEnabled ? 1 : 2,
@@ -374,17 +398,17 @@ export default function TokensScreen() {
 
       const env = getApiEnvelope(res.body);
       if (env && env.success === false) {
-        setError(env.message || '保存失败');
+        setFormError(env.message || '保存失败');
         return;
       }
       if (!res.ok) {
-        setError(`保存失败：HTTP ${res.status}`);
+        setFormError(`保存失败：HTTP ${res.status}`);
         return;
       }
       setFormOpen(false);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败');
+      setFormError(e instanceof Error ? e.message : '保存失败');
     } finally {
       setBusy(false);
     }
@@ -474,196 +498,287 @@ export default function TokensScreen() {
   }, [fetchGroups, load]);
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView
+      style={[styles.screen, { backgroundColor: colors.canvas }]}
+      behavior={Platform.select({ ios: 'padding', default: undefined })}>
       <FlatList
         style={styles.list}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
+          { paddingTop: insets.top + Layout.pagePadding, paddingBottom: insets.bottom + 96 }, // 96：为浮动操作栏留出空间（其自身已处理底部安全区）
         ]}
         data={tokens}
         keyExtractor={(item) => String(item.id)}
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>令牌</Text>
+              <Text style={[styles.title, { color: colors.ink }]}>令牌</Text>
               <View style={styles.headerActions}>
-                <Pressable style={styles.actionBtn} onPress={openCreate} disabled={busy}>
-                  <Text style={styles.actionText}>新增</Text>
-                </Pressable>
+                <AppButton label="新增令牌" icon="add" compact onPress={openCreate} disabled={busy} />
               </View>
             </View>
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
             {formOpen && (
               <Surface style={styles.formCard}>
-                <Text style={styles.formTitle}>{editingId ? `编辑 Token #${editingId}` : '新增令牌'}</Text>
-                <Text style={styles.sectionTitle}>基本信息</Text>
+                <Text style={[styles.formTitle, { color: colors.ink }]}>
+                  {editingId ? `编辑 Token #${editingId}` : '新增令牌'}
+                </Text>
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>基本信息</Text>
                 {!!editingKey && (
                   <View style={styles.formRow}>
-                    <Text style={styles.formLabel}>Key</Text>
-                    <View style={[styles.formInput, styles.readOnlyBox]}>
-                      <Text selectable style={styles.readOnlyText}>
+                    <Text style={[styles.formLabel, { color: colors.muted }]}>Key</Text>
+                    <View
+                      style={[
+                        styles.formInput,
+                        styles.readOnlyBox,
+                        { borderColor: colors.border, backgroundColor: colors.surfaceMuted },
+                      ]}>
+                      <Text selectable style={[styles.readOnlyText, { color: colors.ink }]}>
                         {editingKey}
                       </Text>
                     </View>
                   </View>
                 )}
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>名称</Text>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>名称</Text>
                   <TextInput
                     value={nameInput}
                     onChangeText={setNameInput}
                     placeholder="例如：我的令牌"
+                    placeholderTextColor={colors.subtle}
+                    selectionColor={colors.accent}
                     autoCapitalize="none"
                     autoCorrect={false}
-                    style={[inputStyle, styles.formInput]}
+                    style={[
+                      styles.input,
+                      styles.formInput,
+                      { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                    ]}
                   />
                 </View>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>令牌分组</Text>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>令牌分组</Text>
                   <DropdownSelect
                     title="选择分组"
                     value={tokenGroupInput}
                     onChange={setTokenGroupInput}
                     options={groupOptions}
                     placeholder="例如：default"
-                    placeholderTextColor={colorScheme === 'dark' ? '#9BA1A6' : '#98A2B3'}
-                    style={[inputStyle, styles.formInput]}
-                    textStyle={{ color: colorScheme === 'dark' ? '#ECEDEE' : '#11181C' }}
+                    style={[styles.input, styles.formInput]}
                   />
                 </View>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>启用</Text>
-                  <Switch value={statusEnabled} onValueChange={setStatusEnabled} />
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>启用</Text>
+                  <Switch
+                    value={statusEnabled}
+                    onValueChange={setStatusEnabled}
+                    trackColor={{ true: colors.accent, false: colors.borderStrong }}
+                    thumbColor={statusEnabled ? colors.onAccent : colors.surface}
+                    accessibilityLabel="启用"
+                  />
                 </View>
 
-                <View style={styles.divider} />
-                <Text style={styles.sectionTitle}>到期时间</Text>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>到期时间</Text>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>到期时间</Text>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>到期时间</Text>
                   <TextInput
                     value={expiredTimeInput}
                     onChangeText={setExpiredTimeInput}
                     placeholder="epoch seconds（可选）"
+                    placeholderTextColor={colors.subtle}
+                    selectionColor={colors.accent}
                     keyboardType="numeric"
-                    style={[inputStyle, styles.formInput]}
+                    style={[
+                      styles.input,
+                      styles.formInput,
+                      { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                    ]}
                   />
                 </View>
-                <View style={styles.quickRow}>
-                  <Pressable style={styles.quickBtn} onPress={applyNeverExpire} disabled={busy}>
-                    <Text style={styles.quickText}>永不过期</Text>
-                  </Pressable>
-                  <Pressable style={styles.quickBtn} onPress={() => applyExpiryOffset(30 * 24 * 3600)} disabled={busy}>
-                    <Text style={styles.quickText}>一个月</Text>
-                  </Pressable>
-                  <Pressable style={styles.quickBtn} onPress={() => applyExpiryOffset(24 * 3600)} disabled={busy}>
-                    <Text style={styles.quickText}>一天</Text>
-                  </Pressable>
-                  <Pressable style={styles.quickBtn} onPress={() => applyExpiryOffset(3600)} disabled={busy}>
-                    <Text style={styles.quickText}>一小时</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.helpText}>
-                  预览：{formatDateTimeEpochSeconds(expiredTimeInput.trim() ? Number(expiredTimeInput.trim()) : undefined)}
-                </Text>
-
-                <View style={styles.divider} />
-                <Text style={styles.sectionTitle}>额度设置</Text>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>无限额</Text>
-                  <Switch value={unlimitedQuota} onValueChange={setUnlimitedQuota} />
+                  <View style={styles.formLabelSpacer} />
+                  <View style={styles.quickBtns}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.quickBtn,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        pressed && !busy ? { backgroundColor: colors.surfaceMuted } : null,
+                        busy ? styles.quickDisabled : null,
+                      ]}
+                      onPress={applyNeverExpire}
+                      disabled={busy}>
+                      <Text style={[styles.quickText, { color: colors.ink }]}>永不过期</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.quickBtn,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        pressed && !busy ? { backgroundColor: colors.surfaceMuted } : null,
+                        busy ? styles.quickDisabled : null,
+                      ]}
+                      onPress={() => applyExpiryOffset(30 * 24 * 3600)}
+                      disabled={busy}>
+                      <Text style={[styles.quickText, { color: colors.ink }]}>一个月</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.quickBtn,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        pressed && !busy ? { backgroundColor: colors.surfaceMuted } : null,
+                        busy ? styles.quickDisabled : null,
+                      ]}
+                      onPress={() => applyExpiryOffset(24 * 3600)}
+                      disabled={busy}>
+                      <Text style={[styles.quickText, { color: colors.ink }]}>一天</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.quickBtn,
+                        { borderColor: colors.border, backgroundColor: colors.surface },
+                        pressed && !busy ? { backgroundColor: colors.surfaceMuted } : null,
+                        busy ? styles.quickDisabled : null,
+                      ]}
+                      onPress={() => applyExpiryOffset(3600)}
+                      disabled={busy}>
+                      <Text style={[styles.quickText, { color: colors.ink }]}>一小时</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                <View style={styles.formRow}>
+                  <View style={styles.formLabelSpacer} />
+                  <Text style={[styles.helpText, { color: colors.muted }]}>
+                    预览：{formatDateTimeEpochSeconds(expiredTimeInput.trim() ? Number(expiredTimeInput.trim()) : undefined)}
+                  </Text>
+                </View>
+
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>额度设置</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>无限额</Text>
+                  <Switch
+                    value={unlimitedQuota}
+                    onValueChange={setUnlimitedQuota}
+                    trackColor={{ true: colors.accent, false: colors.borderStrong }}
+                    thumbColor={unlimitedQuota ? colors.onAccent : colors.surface}
+                    accessibilityLabel="无限额"
+                  />
                 </View>
                 {!unlimitedQuota && (
                   <View style={styles.formRow}>
-                    <Text style={styles.formLabel}>剩余额度</Text>
+                    <Text style={[styles.formLabel, { color: colors.muted }]}>剩余额度</Text>
                     <TextInput
                       value={remainQuotaInput}
                       onChangeText={setRemainQuotaInput}
                       placeholder="整数"
+                      placeholderTextColor={colors.subtle}
+                      selectionColor={colors.accent}
                       keyboardType="numeric"
-                      style={[inputStyle, styles.formInput]}
+                      style={[
+                        styles.input,
+                        styles.formInput,
+                        { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                      ]}
                     />
                   </View>
                 )}
 
-                <View style={styles.divider} />
-                <Text style={styles.sectionTitle}>访问限制</Text>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>访问限制</Text>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>模型限制</Text>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>模型限制</Text>
                   <TextInput
                     value={modelLimitInput}
                     onChangeText={setModelLimitInput}
                     placeholder="逗号/换行分隔，或 JSON 数组"
+                    placeholderTextColor={colors.subtle}
+                    selectionColor={colors.accent}
                     autoCapitalize="none"
                     autoCorrect={false}
                     multiline
-                    style={[inputStyle, styles.formInput, styles.textArea]}
+                    style={[
+                      styles.input,
+                      styles.formInput,
+                      styles.textArea,
+                      { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                    ]}
                     textAlignVertical="top"
                   />
                 </View>
                 <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>IP 白名单</Text>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>IP 白名单</Text>
                   <TextInput
                     value={ipWhitelistInput}
                     onChangeText={setIpWhitelistInput}
                     placeholder="允许的 IP，一行一个；留空不限制"
+                    placeholderTextColor={colors.subtle}
+                    selectionColor={colors.accent}
                     autoCapitalize="none"
                     autoCorrect={false}
                     multiline
-                    style={[inputStyle, styles.formInput, styles.textArea]}
+                    style={[
+                      styles.input,
+                      styles.formInput,
+                      styles.textArea,
+                      { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                    ]}
                     textAlignVertical="top"
                   />
                 </View>
 
-                <View style={styles.divider} />
-                <Text style={styles.sectionTitle}>高级字段（JSON）</Text>
+                <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>高级字段（JSON）</Text>
                 <TextInput
                   value={extraJson}
                   onChangeText={setExtraJson}
                   placeholder={'{\n  "note": "..."\n}'}
+                  placeholderTextColor={colors.subtle}
+                  selectionColor={colors.accent}
                   autoCapitalize="none"
                   autoCorrect={false}
                   multiline
-                  style={[inputStyle, styles.textArea]}
+                  style={[
+                    styles.input,
+                    styles.textArea,
+                    { borderColor: colors.borderStrong, backgroundColor: colors.surface, color: colors.ink },
+                  ]}
                   textAlignVertical="top"
                 />
+                {!!formError && <InlineNotice message={formError} />}
                 <View style={styles.formActions}>
-                  <Pressable
-                    style={[styles.actionBtn, styles.primaryBtn]}
-                    onPress={saveToken}
-                    disabled={busy}>
-                    <Text style={[styles.actionText, styles.primaryText]}>{busy ? '保存中…' : '保存'}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.actionBtn, styles.secondaryBtn]}
+                  <AppButton label="保存令牌" icon="save" loading={busy} onPress={saveToken} />
+                  <AppButton
+                    label="取消"
+                    icon="close"
+                    variant="secondary"
                     onPress={() => setFormOpen(false)}
-                    disabled={busy}>
-                    <Text style={styles.actionText}>取消</Text>
-                  </Pressable>
+                    disabled={busy}
+                  />
                 </View>
               </Surface>
             )}
             <View style={styles.summaryRow}>
               <Surface style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>令牌数量</Text>
-                <Text style={styles.summaryValue}>{total || tokens.length}</Text>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>令牌数量</Text>
+                <Text style={[styles.summaryValue, { color: colors.ink }]}>{total || tokens.length}</Text>
               </Surface>
               <Surface style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>剩余额度</Text>
-                <Text style={styles.summaryValue}>{formatQuota(totalRemain, quota ?? undefined)}</Text>
+                <Text style={[styles.summaryLabel, { color: colors.muted }]}>剩余额度</Text>
+                <Text style={[styles.summaryValue, { color: colors.ink }]}>
+                  {formatQuota(totalRemain, quota ?? undefined)}
+                </Text>
               </Surface>
             </View>
-            <Text style={styles.listTitle}>列表</Text>
+            <Text style={[styles.listTitle, { color: colors.ink }]}>列表</Text>
           </View>
         }
         renderItem={({ item }) => (
           <Surface style={styles.item}>
             <View style={styles.itemTop}>
-              <Text style={styles.name}>{item.name || `Token #${item.id}`}</Text>
+              <Text style={[styles.name, { color: colors.ink }]} numberOfLines={1} ellipsizeMode="tail">
+                {item.name || `Token #${item.id}`}
+              </Text>
               <Badge
                 text={
                   item.status === 1
@@ -676,50 +791,64 @@ export default function TokensScreen() {
                           ? '已耗尽'
                           : `状态 ${item.status ?? '—'}`
                 }
-                color={
+                tone={
                   item.status === 1
-                    ? '#DCFCE7'
+                    ? 'success'
                     : item.status === 2
-                      ? '#FEE2E2'
-                      : item.status === 3 || item.status === 4
-                        ? '#FEF9C3'
-                        : '#E5E7EB'
+                      ? 'neutral'
+                      : item.status === 3
+                        ? 'warning'
+                        : 'danger'
                 }
               />
             </View>
             <View style={styles.opsRow}>
-              <Pressable
-                style={[styles.smallBtn, item.status === 1 ? styles.dangerBtn : styles.primaryBtn]}
+              <AppButton
+                label={item.status === 1 ? '禁用' : '启用'}
+                icon={item.status === 1 ? 'block' : 'check-circle'}
+                variant={item.status === 1 ? 'danger' : 'primary'}
+                compact
                 onPress={() => toggleStatus(item.id, item.status !== 1)}
-                disabled={busy}>
-                <Text style={[styles.smallBtnText, item.status === 1 ? styles.dangerText : styles.primaryText]}>
-                  {item.status === 1 ? '禁用' : '启用'}
-                </Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.secondaryBtn]} onPress={() => openEdit(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>编辑</Text>
-              </Pressable>
-              <Pressable style={[styles.smallBtn, styles.ghostBtn]} onPress={() => deleteToken(item.id)} disabled={busy}>
-                <Text style={styles.smallBtnText}>删除</Text>
-              </Pressable>
+                disabled={busy}
+              />
+              <AppButton
+                label="编辑"
+                icon="edit"
+                variant="secondary"
+                compact
+                onPress={() => openEdit(item.id)}
+                disabled={busy}
+              />
+              <AppButton
+                label="删除"
+                icon="delete-outline"
+                variant="danger"
+                compact
+                onPress={() => deleteToken(item.id)}
+                disabled={busy}
+              />
             </View>
             <View style={styles.metaRow}>
-              <Text style={styles.metaKey}>Key</Text>
-              <Text style={styles.metaVal}>{maskKey(item.key)}</Text>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>Key</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>{maskKey(item.key)}</Text>
             </View>
             <View style={styles.metaRow}>
-              <Text style={styles.metaKey}>剩余额度</Text>
-              <Text style={styles.metaVal}>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>剩余额度</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>
                 {item.unlimitedQuota ? '无限制' : formatQuota(item.remainQuota, quota ?? undefined)}
               </Text>
             </View>
             <View style={styles.metaRow}>
-              <Text style={styles.metaKey}>到期</Text>
-              <Text style={styles.metaVal}>{formatDateTimeEpochSeconds(item.expiredTime)}</Text>
+              <Text style={[styles.metaKey, { color: colors.muted }]}>到期</Text>
+              <Text style={[styles.metaVal, { color: colors.ink }]}>
+                {formatDateTimeEpochSeconds(item.expiredTime)}
+              </Text>
             </View>
           </Surface>
         )}
-        ListEmptyComponent={<Text style={styles.empty}>暂无令牌，点击“刷新”加载</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无令牌" description="创建一个访问令牌，或刷新列表后重试。" icon="vpn-key" />
+        }
       />
 
       <FloatingPageControls
@@ -731,31 +860,35 @@ export default function TokensScreen() {
         disabledNext={busy || !canNext}
         refreshLabel={busy ? '刷新中…' : '刷新'}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
   },
   list: {
     flex: 1,
   },
   container: {
-    padding: 16,
-    gap: 12,
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
   },
   header: {
     gap: 12,
   },
   headerActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   titleRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
@@ -763,87 +896,52 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#11181C',
-  },
-  actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
-  },
-  actionText: {
-    fontWeight: '700',
-    color: '#11181C',
-  },
-  primaryBtn: {
-    backgroundColor: '#11181C',
-  },
-  primaryText: {
-    color: '#fff',
-  },
-  secondaryBtn: {
-    backgroundColor: '#fff',
-  },
-  dangerBtn: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#FCA5A5',
-  },
-  dangerText: {
-    color: '#991B1B',
-  },
-  ghostBtn: {
-    backgroundColor: '#667085',
-    borderColor: 'transparent',
-  },
-  errorText: {
-    color: '#d11',
-    fontWeight: '600',
   },
   formCard: {
     gap: 10,
   },
   formTitle: {
     fontSize: 14,
-    fontWeight: '900',
-    color: '#11181C',
+    fontWeight: '700',
   },
   sectionTitle: {
     marginTop: 6,
     fontSize: 13,
-    fontWeight: '900',
-    color: '#11181C',
+    fontWeight: '700',
   },
   formRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
   formLabel: {
-    width: 72,
+    width: FORM_LABEL_WIDTH,
     fontSize: 13,
     fontWeight: '700',
-    color: '#667085',
+  },
+  formLabelSpacer: {
+    width: FORM_LABEL_WIDTH,
   },
   formInput: {
     flex: 1,
+    minWidth: 0,
   },
   formActions: {
     marginTop: 4,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(0,0,0,0.08)',
     marginTop: 10,
     marginBottom: 2,
   },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
@@ -851,51 +949,37 @@ const styles = StyleSheet.create({
     minHeight: 92,
     paddingVertical: 10,
   },
-  inputLight: {
-    borderColor: '#d0d0d0',
-    backgroundColor: '#fff',
-    color: '#11181C',
-  },
-  inputDark: {
-    borderColor: '#333',
-    backgroundColor: '#1e1f20',
-    color: '#ECEDEE',
-  },
-  quickRow: {
+  quickBtns: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginLeft: 72,
   },
   quickBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#fff',
+  },
+  quickDisabled: {
+    opacity: 0.5,
   },
   quickText: {
     fontWeight: '800',
-    color: '#11181C',
     fontSize: 12,
   },
   helpText: {
-    marginLeft: 72,
-    color: '#667085',
+    flex: 1,
     fontSize: 12,
     fontWeight: '600',
   },
   readOnlyBox: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 10,
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: 'rgba(0,0,0,0.03)',
   },
   readOnlyText: {
-    color: '#11181C',
     fontWeight: '700',
   },
   summaryRow: {
@@ -908,19 +992,17 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 12,
-    color: '#667085',
     fontWeight: '700',
   },
   summaryValue: {
     fontSize: 18,
-    fontWeight: '900',
-    color: '#11181C',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   listTitle: {
     marginTop: 4,
     fontSize: 14,
     fontWeight: '800',
-    color: '#11181C',
   },
   item: {
     gap: 10,
@@ -933,25 +1015,14 @@ const styles = StyleSheet.create({
   },
   opsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
-  },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
-    backgroundColor: '#fff',
-  },
-  smallBtnText: {
-    fontWeight: '800',
-    color: '#11181C',
   },
   name: {
     flex: 1,
+    minWidth: 0,
     fontSize: 14,
-    fontWeight: '900',
-    color: '#11181C',
+    fontWeight: '700',
   },
   metaRow: {
     flexDirection: 'row',
@@ -960,18 +1031,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   metaKey: {
-    color: '#667085',
     fontSize: 13,
     fontWeight: '600',
   },
   metaVal: {
-    color: '#11181C',
     fontSize: 13,
     fontWeight: '800',
-  },
-  empty: {
-    paddingTop: 16,
-    color: '#667085',
-    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
 });

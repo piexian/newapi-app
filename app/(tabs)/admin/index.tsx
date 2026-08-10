@@ -1,78 +1,187 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { EmptyState } from '@/components/ui/empty-state';
 import { Surface } from '@/components/ui/surface';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useMe } from '@/providers/me-provider';
+
+type Destination = {
+  title: string;
+  description: string;
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  route:
+    | '/(tabs)/admin/redemptions'
+    | '/(tabs)/admin/channels'
+    | '/(tabs)/admin/users';
+};
+
+const destinations: Destination[] = [
+  {
+    title: '兑换码',
+    description: '生成、停用和清理兑换码',
+    icon: 'confirmation-number',
+    route: '/(tabs)/admin/redemptions',
+  },
+  {
+    title: '渠道',
+    description: '维护模型渠道和运行状态',
+    icon: 'hub',
+    route: '/(tabs)/admin/channels',
+  },
+  {
+    title: '用户',
+    description: '搜索用户并管理账号状态',
+    icon: 'group',
+    route: '/(tabs)/admin/users',
+  },
+];
+
+function AdminMenuRow({ item }: { item: Destination }) {
+  const router = useRouter();
+  const { colors } = useAppTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`进入${item.title}管理`}
+      onPress={() => router.push(item.route)}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => (pressed ? styles.menuItemPressed : null)}>
+      <Surface
+        style={[
+          styles.menuRowInner,
+          hovered ? { backgroundColor: colors.surfaceMuted, borderColor: colors.borderStrong } : null,
+        ]}>
+        <View style={[styles.menuIcon, { backgroundColor: colors.accentSoft }]}>
+          <MaterialIcons name={item.icon} size={22} color={colors.accent} />
+        </View>
+        <View style={styles.menuCopy}>
+          <Text style={[styles.menuTitle, { color: colors.ink }]} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={[styles.menuDescription, { color: colors.muted }]} numberOfLines={1}>
+            {item.description}
+          </Text>
+        </View>
+        <MaterialIcons name="chevron-right" size={24} color={colors.subtle} />
+      </Surface>
+    </Pressable>
+  );
+}
 
 export default function AdminHomeScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
-  const { me, isAdmin, isRoot } = useMe();
-
-  if (!isAdmin) {
-    return (
-      <View style={styles.screen}>
-        <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 }]}>
-          <Text style={styles.title}>管理</Text>
-          <Surface>
-            <Text style={styles.hint}>当前账号无管理员权限</Text>
-          </Surface>
-        </ScrollView>
-      </View>
-    );
-  }
+  const { me, isAdmin, isRoot, isLoaded } = useMe();
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 }]}>
-        <Text style={styles.title}>管理</Text>
-        <Text style={styles.sub}>当前用户：{me?.username ?? '—'} · {isRoot ? 'Root' : 'Admin'}</Text>
+    <ScrollView
+      style={[styles.screen, { backgroundColor: colors.canvas }]}
+      contentContainerStyle={[
+        styles.container,
+        { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
+      ]}>
+      <View style={styles.header}>
+        <Text style={[styles.title, { color: colors.ink }]}>管理</Text>
+        <Text style={[styles.subtitle, { color: colors.muted }]} numberOfLines={1}>
+          {isAdmin ? `${me?.username ?? '管理员'} · ${isRoot ? 'Root' : 'Admin'}` : '管理权限'}
+        </Text>
+      </View>
 
-        <Surface style={styles.card}>
-          <Text style={styles.cardTitle}>兑换码</Text>
-          <Text style={styles.hint}>批量生成、启用/禁用、删除、清理失效</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.push('/(tabs)/admin/redemptions')}>
-            <Text style={styles.primaryText}>进入兑换码管理</Text>
-          </Pressable>
-        </Surface>
-
-        <Surface style={styles.card}>
-          <Text style={styles.cardTitle}>渠道</Text>
-          <Text style={styles.hint}>查看列表、启用/禁用、编辑基础字段</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.push('/(tabs)/admin/channels')}>
-            <Text style={styles.primaryText}>进入渠道管理</Text>
-          </Pressable>
-        </Surface>
-
-        <Surface style={styles.card}>
-          <Text style={styles.cardTitle}>用户</Text>
-          <Text style={styles.hint}>搜索、编辑、启用/禁用、重置 2FA/Passkey、注销</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.push('/(tabs)/admin/users')}>
-            <Text style={styles.primaryText}>进入用户管理</Text>
-          </Pressable>
-        </Surface>
-      </ScrollView>
-    </View>
+      {!isLoaded ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.accent} />
+          <Text style={[styles.loadingText, { color: colors.muted }]}>加载中</Text>
+        </View>
+      ) : !isAdmin ? (
+        <EmptyState
+          icon="lock-outline"
+          title="当前账号无管理员权限"
+          description="请切换到管理员账号后再访问此区域。"
+        />
+      ) : (
+        <View style={styles.menu}>
+          {destinations.map((item) => (
+            <AdminMenuRow key={item.route} item={item} />
+          ))}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F8FA' },
-  container: { padding: 16, gap: 12 },
-  title: { fontSize: 20, fontWeight: '800', color: '#11181C' },
-  sub: { marginTop: -6, fontSize: 12, fontWeight: '700', color: '#667085' },
-  card: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
-  hint: { color: '#667085', fontSize: 12, fontWeight: '600' },
-  primaryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
+  screen: {
+    flex: 1,
   },
-  primaryText: { color: '#fff', fontWeight: '900' },
+  container: {
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
+  },
+  header: {
+    gap: 4,
+  },
+  title: {
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: '800',
+  },
+  subtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    flexShrink: 1,
+  },
+  menu: {
+    gap: 10,
+  },
+  menuRowInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  menuItemPressed: {
+    opacity: 0.84,
+    transform: [{ scale: 0.995 }],
+  },
+  menuIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.medium,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuCopy: {
+    minWidth: 0,
+    flex: 1,
+    gap: 3,
+  },
+  menuTitle: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '800',
+  },
+  menuDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loading: {
+    minHeight: 260,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
 });

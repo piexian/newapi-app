@@ -24,6 +24,12 @@ export function createApiClient(config: ApiClientConfig) {
       sendUserId?: boolean;
       sendAccessToken?: boolean;
     };
+    /**
+     * 是否携带 cookie。默认 'omit'：鉴权走 Bearer 头，无需 cookie，
+     * 避免把凭据不必要的发往用户自定义的任意服务器。
+     * 仅在确实依赖服务端 session（如部分支付回调）时显式传 'include'。
+     */
+    credentials?: 'omit' | 'include' | 'same-origin';
   }): Promise<ApiResult<T>> {
     if (!config.baseUrl) {
       throw new Error('Base URL 未设置');
@@ -56,7 +62,7 @@ export function createApiClient(config: ApiClientConfig) {
       method: args.method ?? 'GET',
       headers,
       body: args.body === undefined ? undefined : JSON.stringify(args.body),
-      credentials: 'include',
+      credentials: args.credentials ?? 'omit',
     });
 
     const body = (await readResponseBody(response)) as T;

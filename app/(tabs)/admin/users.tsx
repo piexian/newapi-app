@@ -1,12 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { Badge } from '@/components/ui/badge';
+import { AppButton } from '@/components/ui/app-button';
 import { DropdownSelect } from '@/components/ui/dropdown-select';
 import { FloatingPageControls } from '@/components/ui/floating-page-controls';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
+import { Layout, Radius, type ToneName } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 import { useApi } from '@/hooks/use-api';
 import { formatCount, formatOmega } from '@/lib/format';
 import type { User } from '@/lib/models';
@@ -49,16 +66,16 @@ function roleLabel(role?: number) {
   }
 }
 
-function roleColor(role?: number) {
+function roleTone(role?: number): ToneName {
   switch (role) {
     case 1:
-      return '#DBEAFE';
+      return 'info';
     case 10:
-      return '#FEF9C3';
+      return 'warning';
     case 100:
-      return '#FFEDD5';
+      return 'accent';
     default:
-      return '#E5E7EB';
+      return 'neutral';
   }
 }
 
@@ -74,15 +91,15 @@ function statusLabel(status?: number, deleted?: boolean) {
   }
 }
 
-function statusColor(status?: number, deleted?: boolean) {
-  if (deleted) return '#E5E7EB';
+function statusTone(status?: number, deleted?: boolean): ToneName {
+  if (deleted) return 'neutral';
   switch (status) {
     case 1:
-      return '#DCFCE7';
+      return 'success';
     case 2:
-      return '#FEE2E2';
+      return 'danger';
     default:
-      return '#E5E7EB';
+      return 'neutral';
   }
 }
 
@@ -104,9 +121,24 @@ export default function AdminUsersScreen() {
   const { isAdmin, isRoot } = useMe();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { colors } = useAppTheme();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSuccess = useCallback((message: string) => {
+    setSuccess(message);
+    if (successTimer.current) clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setSuccess(''), 3000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (successTimer.current) clearTimeout(successTimer.current);
+    };
+  }, []);
 
   const [items, setItems] = useState<User[]>([]);
   const [page, setPage] = useState(1);
@@ -116,6 +148,15 @@ export default function AdminUsersScreen() {
   const [keyword, setKeyword] = useState('');
   const [group, setGroup] = useState('');
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
+
+  // applied*：已提交的搜索条件。输入/下拉直接改 draft，
+  // 只有点"搜索/重置"时提交到 applied，load 依赖 applied，
+  // 避免每次键入或切换分组都触发网络请求。
+  const [appliedKeyword, setAppliedKeyword] = useState('');
+  const [appliedGroup, setAppliedGroup] = useState('');
+
+  // 请求序号守卫：仅最新一次请求的响应才会写入 state，丢弃过期响应。
+  const requestSeq = useRef(0);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -137,12 +178,14 @@ export default function AdminUsersScreen() {
   const canNext = total <= 0 ? items.length >= pageSize : page * pageSize < total;
 
   const load = useCallback(
-    async (nextPage = 1) => {
+    async (nextPage = 1, filters?: { keyword?: string; group?: string }) => {
+      const seq = ++requestSeq.current;
       setError('');
       setBusy(true);
       try {
-        const kw = keyword.trim();
-        const g = group.trim();
+        // 当显式传 filters 时（重置按钮），优先用 filters 的值；否则用 applied*
+        const kw = (filters?.keyword ?? appliedKeyword).trim();
+        const g = (filters?.group ?? appliedGroup).trim();
         const searching = !!kw || !!g;
         const res = await api.request({
           path: searching ? '/api/user/search' : '/api/user/',
@@ -153,6 +196,7 @@ export default function AdminUsersScreen() {
             group: g || undefined,
           },
         });
+        if (seq !== requestSeq.current) return;
         const err = getApiError(res.body);
         if (err) {
           setError(err);
@@ -176,12 +220,13 @@ export default function AdminUsersScreen() {
 
         if (!res.ok) setError(`请求失败：HTTP ${res.status}`);
       } catch (e) {
+        if (seq !== requestSeq.current) return;
         setError(e instanceof Error ? e.message : '请求失败');
       } finally {
-        setBusy(false);
+        if (seq === requestSeq.current) setBusy(false);
       }
     },
-    [api, group, keyword, pageSize]
+    [api, appliedGroup, appliedKeyword, pageSize]
   );
 
   const fetchGroups = useCallback(async () => {
@@ -203,6 +248,15 @@ export default function AdminUsersScreen() {
     void load(1);
     void fetchGroups();
   }, [fetchGroups, isAdmin, load]);
+
+  const resetFilters = useCallback(() => {
+    setKeyword('');
+    setGroup('');
+    setAppliedKeyword('');
+    setAppliedGroup('');
+    // 传入清空后的值直接加载，避免依赖 state 更新时序
+    void load(1, { keyword: '', group: '' });
+  }, [load]);
 
   const openCreate = useCallback(() => {
     setEditingId(null);
@@ -290,14 +344,14 @@ export default function AdminUsersScreen() {
           setError(`操作失败：HTTP ${res.status}`);
           return;
         }
-        Alert.alert('已完成', 'Passkey 已重置');
+        showSuccess('Passkey 已重置');
       } catch (e) {
         setError(e instanceof Error ? e.message : '操作失败');
       } finally {
         setBusy(false);
       }
     },
-    [api]
+    [api, showSuccess]
   );
 
   const resetTwoFA = useCallback(
@@ -315,14 +369,14 @@ export default function AdminUsersScreen() {
           setError(`操作失败：HTTP ${res.status}`);
           return;
         }
-        Alert.alert('已完成', '2FA 已重置');
+        showSuccess('2FA 已重置');
       } catch (e) {
         setError(e instanceof Error ? e.message : '操作失败');
       } finally {
         setBusy(false);
       }
     },
-    [api]
+    [api, showSuccess]
   );
 
   const save = useCallback(async () => {
@@ -429,54 +483,56 @@ export default function AdminUsersScreen() {
 
   if (!isAdmin) {
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
         <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.title}>用户</Text>
-          <Surface>
-            <Text style={styles.hint}>无权限</Text>
-          </Surface>
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <Text style={styles.backText}>返回</Text>
-          </Pressable>
+          <Text style={[styles.title, { color: colors.ink }]}>用户</Text>
+          <EmptyState icon="lock-outline" title="无权限" description="当前账号无管理员权限，无法访问此页面。" />
+          <AppButton label="返回管理" icon="arrow-back" variant="secondary" onPress={() => router.back()} />
         </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <FlatList
         style={styles.list}
-        contentContainerStyle={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 }]}
+        contentContainerStyle={[
+          styles.container,
+          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 96 }, // 底部预留浮动分页栏空间
+        ]}
         data={items}
         keyExtractor={(it) => String(it.id)}
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.titleRow}>
-              <Text style={styles.title}>用户</Text>
+              <View style={styles.pageTitleGroup}>
+                <AppButton label="返回" icon="arrow-back" variant="quiet" compact onPress={() => router.back()} />
+                <Text style={[styles.title, { color: colors.ink }]}>用户</Text>
+              </View>
               <View style={styles.actions}>
-                <Pressable style={[styles.actionBtn, styles.primaryBtn]} onPress={openCreate} disabled={busy}>
-                  <Text style={[styles.actionText, styles.primaryText]}>新增</Text>
-                </Pressable>
+                <AppButton label="新增用户" icon="person-add" compact onPress={openCreate} disabled={busy} />
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
+            {!!success && <InlineNotice message={success} title="已完成" tone="success" />}
 
             <Surface style={styles.searchCard}>
-              <Text style={styles.cardTitle}>搜索</Text>
-              <View style={styles.inlineRow}>
+              <Text style={[styles.cardTitle, { color: colors.ink }]}>搜索</Text>
+              <View style={styles.searchRow}>
                 <TextInput
                   value={keyword}
                   onChangeText={setKeyword}
                   placeholder="支持 ID/用户名/显示名称/邮箱"
+                  placeholderTextColor={colors.subtle}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
+                  style={[
+                    styles.input,
+                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                    styles.flex1,
+                  ]}
                 />
                 <DropdownSelect
                   title="选择分组"
@@ -486,24 +542,29 @@ export default function AdminUsersScreen() {
                   placeholder="分组（可选）"
                   style={[styles.input, styles.flex1]}
                 />
-                <Pressable style={styles.actionBtn} onPress={() => load(1)} disabled={busy}>
-                  <Text style={styles.actionText}>搜索</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.actionBtn}
+              </View>
+              <View style={styles.searchActions}>
+                <AppButton
+                  label="搜索"
+                  icon="search"
+                  variant="secondary"
+                  style={styles.flexBtn}
                   onPress={() => {
-                    setKeyword('');
-                    setGroup('');
-                    setTimeout(() => {
-                      void load(1);
-                    }, 50);
+                    setAppliedKeyword(keyword);
+                    setAppliedGroup(group);
                   }}
                   disabled={busy}
-                >
-                  <Text style={styles.actionText}>重置</Text>
-                </Pressable>
+                />
+                <AppButton
+                  label="重置"
+                  icon="refresh"
+                  variant="secondary"
+                  style={styles.flexBtn}
+                  onPress={resetFilters}
+                  disabled={busy}
+                />
               </View>
-              <Text style={styles.pagerInfo}>{pagerInfo}</Text>
+              <Text style={[styles.pagerInfo, { color: colors.muted }]}>{pagerInfo}</Text>
             </Surface>
           </View>
         }
@@ -517,56 +578,61 @@ export default function AdminUsersScreen() {
             <Surface style={[styles.item, deleted ? styles.itemDisabled : null]}>
               <View style={styles.itemTop}>
                 <View style={styles.itemTitleWrap}>
-                  <Text style={styles.itemTitle} numberOfLines={1}>
-                    {item.username} <Text style={styles.dim}>#{item.id}</Text>
+                  <Text style={[styles.itemTitle, { color: colors.ink }]} numberOfLines={1}>
+                    {item.username} <Text style={[styles.dim, { color: colors.subtle }]}>#{item.id}</Text>
                   </Text>
                   {!!item.remark && (
-                    <Text style={styles.remark} numberOfLines={1}>
+                    <Text style={[styles.remark, { color: colors.muted }]} numberOfLines={1}>
                       {item.remark}
                     </Text>
                   )}
                 </View>
-                <Badge text={statusLabel(item.status, deleted)} color={statusColor(item.status, deleted)} />
+                <Badge text={statusLabel(item.status, deleted)} tone={statusTone(item.status, deleted)} />
               </View>
 
               <View style={styles.kvRow}>
-                <Text style={styles.k}>角色</Text>
-                <Badge text={roleLabel(item.role)} color={roleColor(item.role)} />
+                <Text style={[styles.k, { color: colors.muted }]}>角色</Text>
+                <Badge text={roleLabel(item.role)} tone={roleTone(item.role)} />
               </View>
               <View style={styles.kvRow}>
-                <Text style={styles.k}>分组</Text>
-                <Text style={styles.v}>{item.group || 'default'}</Text>
-              </View>
-
-              <View style={styles.kvRow}>
-                <Text style={styles.k}>调用次数</Text>
-                <Text style={styles.v}>{formatCount(item.requestCount)}</Text>
+                <Text style={[styles.k, { color: colors.muted }]}>分组</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{item.group || 'default'}</Text>
               </View>
 
               <View style={styles.kvRow}>
-                <Text style={styles.k}>额度</Text>
-                <Text style={styles.v}>
+                <Text style={[styles.k, { color: colors.muted }]}>调用次数</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{formatCount(item.requestCount)}</Text>
+              </View>
+
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>额度</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>
                   {formatOmega(remain)} / {formatOmega(totalQuota)}
                 </Text>
               </View>
-              <View style={styles.progressWrap}>
-                <View style={[styles.progressBar, { width: `${Math.round(percent * 100)}%` }]} />
+              <View style={[styles.progressWrap, { backgroundColor: colors.surfaceMuted }]}>
+                <View
+                  style={[
+                    styles.progressBar,
+                    { backgroundColor: colors.accent, width: `${Math.round(percent * 100)}%` },
+                  ]}
+                />
               </View>
 
               <View style={styles.kvRow}>
-                <Text style={styles.k}>邀请</Text>
-                <Text style={styles.v}>
+                <Text style={[styles.k, { color: colors.muted }]}>邀请</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>
                   {formatCount(item.affCount)} · 收益 {formatOmega(item.affHistoryQuota)} · 邀请人 {item.inviterId ?? '—'}
                 </Text>
               </View>
 
               <View style={styles.opsRow}>
-                <Pressable style={[styles.smallBtn, styles.primaryBtn]} onPress={() => openEdit(item.id)} disabled={busy}>
-                  <Text style={[styles.smallBtnText, styles.primaryText]}>编辑</Text>
-                </Pressable>
+                <AppButton label="编辑" icon="edit" variant="primary" compact onPress={() => openEdit(item.id)} disabled={busy} />
                 {!deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, item.status === 1 ? styles.dangerBtn : styles.primaryBtn]}
+                  <AppButton
+                    label={item.status === 1 ? '禁用' : '启用'}
+                    variant={item.status === 1 ? 'danger' : 'primary'}
+                    compact
                     onPress={() => {
                       const action = item.status === 1 ? 'disable' : 'enable';
                       Alert.alert(
@@ -579,15 +645,13 @@ export default function AdminUsersScreen() {
                       );
                     }}
                     disabled={busy}
-                  >
-                    <Text style={[styles.smallBtnText, item.status === 1 ? styles.dangerText : styles.primaryText]}>
-                      {item.status === 1 ? '禁用' : '启用'}
-                    </Text>
-                  </Pressable>
+                  />
                 )}
                 {!deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, styles.ghostBtn]}
+                  <AppButton
+                    label="重置 Passkey"
+                    variant="secondary"
+                    compact
                     onPress={() => {
                       Alert.alert('重置 Passkey', '将解绑该用户当前的 Passkey。确定继续？', [
                         { text: '取消', style: 'cancel' },
@@ -595,13 +659,13 @@ export default function AdminUsersScreen() {
                       ]);
                     }}
                     disabled={busy}
-                  >
-                    <Text style={[styles.smallBtnText, styles.primaryText]}>重置 Passkey</Text>
-                  </Pressable>
+                  />
                 )}
                 {!deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, styles.ghostBtn]}
+                  <AppButton
+                    label="重置 2FA"
+                    variant="secondary"
+                    compact
                     onPress={() => {
                       Alert.alert('重置 2FA', '将强制禁用该用户两步验证。确定继续？', [
                         { text: '取消', style: 'cancel' },
@@ -609,13 +673,13 @@ export default function AdminUsersScreen() {
                       ]);
                     }}
                     disabled={busy}
-                  >
-                    <Text style={[styles.smallBtnText, styles.primaryText]}>重置 2FA</Text>
-                  </Pressable>
+                  />
                 )}
                 {isRoot && !deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, styles.secondaryBtn]}
+                  <AppButton
+                    label="提升"
+                    variant="secondary"
+                    compact
                     onPress={() => {
                       Alert.alert('提升用户', '将提升该用户为管理员。确定继续？', [
                         { text: '取消', style: 'cancel' },
@@ -623,13 +687,13 @@ export default function AdminUsersScreen() {
                       ]);
                     }}
                     disabled={busy}
-                  >
-                    <Text style={styles.smallBtnText}>提升</Text>
-                  </Pressable>
+                  />
                 )}
                 {isRoot && !deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, styles.secondaryBtn]}
+                  <AppButton
+                    label="降级"
+                    variant="secondary"
+                    compact
                     onPress={() => {
                       Alert.alert('降级用户', '将降级该用户为普通用户。确定继续？', [
                         { text: '取消', style: 'cancel' },
@@ -637,13 +701,13 @@ export default function AdminUsersScreen() {
                       ]);
                     }}
                     disabled={busy}
-                  >
-                    <Text style={styles.smallBtnText}>降级</Text>
-                  </Pressable>
+                  />
                 )}
                 {!deleted && (
-                  <Pressable
-                    style={[styles.smallBtn, styles.dangerBtn]}
+                  <AppButton
+                    label="注销"
+                    variant="danger"
+                    compact
                     onPress={() => {
                       Alert.alert('注销用户', '相当于删除用户，此操作不可逆。确定继续？', [
                         { text: '取消', style: 'cancel' },
@@ -651,15 +715,15 @@ export default function AdminUsersScreen() {
                       ]);
                     }}
                     disabled={busy}
-                  >
-                    <Text style={[styles.smallBtnText, styles.dangerText]}>注销</Text>
-                  </Pressable>
+                  />
                 )}
               </View>
             </Surface>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>暂无用户</Text>}
+        ListEmptyComponent={
+          <EmptyState title="暂无用户" description="调整搜索条件，或刷新后重试。" icon="group" />
+        }
       />
 
       <FloatingPageControls
@@ -680,128 +744,183 @@ export default function AdminUsersScreen() {
           setFormOpen(false);
         }}
       >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
+        <View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: colors.overlay },
+            { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 },
+          ]}
+        >
           <Surface style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{editingId ? `编辑用户 #${editingId}` : '添加用户'}</Text>
+              <Text style={[styles.modalTitle, { color: colors.ink }]}>
+                {editingId ? `编辑用户 #${editingId}` : '添加用户'}
+              </Text>
               <View style={styles.modalHeaderActions}>
-                <Pressable style={styles.modalBtn} onPress={() => setFormOpen(false)} disabled={busy}>
-                  <Text style={styles.modalBtnText}>关闭</Text>
-                </Pressable>
-                <Pressable style={[styles.modalBtn, styles.primaryBtn]} onPress={save} disabled={busy}>
-                  <Text style={[styles.modalBtnText, styles.primaryText]}>{busy ? '保存中…' : '保存'}</Text>
-                </Pressable>
+                <AppButton label="关闭" variant="secondary" compact onPress={() => setFormOpen(false)} disabled={busy} />
+                <AppButton label={busy ? '保存中…' : '保存'} variant="primary" compact onPress={save} disabled={busy} />
               </View>
             </View>
 
-            {!!error && (
-              <Surface>
-                <Text style={styles.errorText}>{error}</Text>
-              </Surface>
-            )}
+            {!!error && <InlineNotice message={error} />}
 
-            <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <Text style={styles.sectionTitle}>基本信息</Text>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>用户名*</Text>
-                <TextInput
-                  value={usernameInput}
-                  onChangeText={setUsernameInput}
-                  placeholder="username"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>显示名称</Text>
-                <TextInput
-                  value={displayNameInput}
-                  onChangeText={setDisplayNameInput}
-                  placeholder="display name"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>{editingId ? '密码(留空不改)' : '密码*'}</Text>
-                <TextInput
-                  value={passwordInput}
-                  onChangeText={setPasswordInput}
-                  placeholder={editingId ? '留空不修改' : '最短 8 位'}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  secureTextEntry
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>备注</Text>
-                <TextInput
-                  value={remarkInput}
-                  onChangeText={setRemarkInput}
-                  placeholder="仅管理员可见"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={[styles.input, styles.flex1]}
-                />
-              </View>
+            {/* 键盘弹出时抬起表单，避免遮挡备注/分组/额度字段 */}
+            <KeyboardAvoidingView
+              style={styles.modalKav}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+              <ScrollView contentContainerStyle={styles.modalBody} keyboardShouldPersistTaps="handled">
+                <Text style={[styles.sectionTitle, { color: colors.ink }]}>基本信息</Text>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>用户名*</Text>
+                  <TextInput
+                    value={usernameInput}
+                    onChangeText={setUsernameInput}
+                    placeholder="username"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                      styles.flex1,
+                    ]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>显示名称</Text>
+                  <TextInput
+                    value={displayNameInput}
+                    onChangeText={setDisplayNameInput}
+                    placeholder="display name"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                      styles.flex1,
+                    ]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>
+                    {editingId ? '密码(留空不改)' : '密码*'}
+                  </Text>
+                  <TextInput
+                    value={passwordInput}
+                    onChangeText={setPasswordInput}
+                    placeholder={editingId ? '留空不修改' : '最短 8 位'}
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    secureTextEntry
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                      styles.flex1,
+                    ]}
+                  />
+                </View>
+                <View style={styles.formRow}>
+                  <Text style={[styles.formLabel, { color: colors.muted }]}>备注</Text>
+                  <TextInput
+                    value={remarkInput}
+                    onChangeText={setRemarkInput}
+                    placeholder="仅管理员可见"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    style={[
+                      styles.input,
+                      { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                      styles.flex1,
+                    ]}
+                  />
+                </View>
 
-              {editingId !== null && (
-                <>
-                  <View style={styles.divider} />
-                  <Text style={styles.sectionTitle}>权限设置</Text>
-                  <View style={styles.formRow}>
-                    <Text style={styles.formLabel}>分组</Text>
-                    <DropdownSelect
-                      title="选择分组"
-                      value={groupInput}
-                      onChange={setGroupInput}
-                      options={groupOptions}
-                      placeholder="default"
-                      style={[styles.input, styles.flex1]}
-                    />
-                  </View>
-                  <View style={styles.formRow}>
-                    <Text style={styles.formLabel}>剩余额度</Text>
-                    <TextInput
-                      value={quotaInput}
-                      onChangeText={setQuotaInput}
-                      placeholder="整数"
-                      keyboardType="numeric"
-                      style={[styles.input, styles.flex1]}
-                    />
-                  </View>
-                  <View style={styles.quickRow}>
-                    {[500000, 1000000, 5000000].map((n) => (
-                      <Pressable key={n} style={styles.quickBtn} onPress={() => applyQuotaDelta(n)} disabled={busy}>
-                        <Text style={styles.quickText}>{`+${formatOmega(n)}`}</Text>
-                      </Pressable>
-                    ))}
-                    {[-500000].map((n) => (
-                      <Pressable key={n} style={styles.quickBtn} onPress={() => applyQuotaDelta(n)} disabled={busy}>
-                        <Text style={styles.quickText}>{`${formatOmega(n)}`}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <Text style={styles.hint}>预览：{formatOmega(quotaInput.trim() ? Number(quotaInput.trim()) : undefined)}</Text>
-
-                  <View style={styles.divider} />
-                  <Text style={styles.sectionTitle}>绑定信息（只读）</Text>
-                  {(['email', 'github_id', 'discord_id', 'oidc_id', 'wechat_id', 'telegram_id'] as const).map((k) => (
-                    <View key={k} style={styles.formRow}>
-                      <Text style={styles.formLabel}>{k}</Text>
-                      <View style={[styles.formInput, styles.readOnlyBox]}>
-                        <Text selectable style={styles.readOnlyText}>
-                          {safeString(editingDetail?.[k]) || '—'}
-                        </Text>
-                      </View>
+                {editingId !== null && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    <Text style={[styles.sectionTitle, { color: colors.ink }]}>权限设置</Text>
+                    <View style={styles.formRow}>
+                      <Text style={[styles.formLabel, { color: colors.muted }]}>分组</Text>
+                      <DropdownSelect
+                        title="选择分组"
+                        value={groupInput}
+                        onChange={setGroupInput}
+                        options={groupOptions}
+                        placeholder="default"
+                        style={[styles.input, styles.flex1]}
+                      />
                     </View>
-                  ))}
-                </>
-              )}
-            </ScrollView>
+                    <View style={styles.formRow}>
+                      <Text style={[styles.formLabel, { color: colors.muted }]}>剩余额度</Text>
+                      <TextInput
+                        value={quotaInput}
+                        onChangeText={setQuotaInput}
+                        placeholder="整数"
+                        placeholderTextColor={colors.subtle}
+                        keyboardType="numeric"
+                        style={[
+                          styles.input,
+                          { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
+                          styles.flex1,
+                        ]}
+                      />
+                    </View>
+                    <View style={styles.quickRow}>
+                      {[500000, 1000000, 5000000].map((n) => (
+                        <Pressable
+                          key={n}
+                          accessibilityRole="button"
+                          accessibilityLabel={`增加额度 ${formatOmega(n)}`}
+                          style={[styles.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                          onPress={() => applyQuotaDelta(n)}
+                          disabled={busy}
+                        >
+                          <Text style={[styles.quickText, { color: colors.ink }]}>{`+${formatOmega(n)}`}</Text>
+                        </Pressable>
+                      ))}
+                      {[-500000].map((n) => (
+                        <Pressable
+                          key={n}
+                          accessibilityRole="button"
+                          accessibilityLabel={`减少额度 ${formatOmega(Math.abs(n))}`}
+                          style={[styles.quickBtn, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                          onPress={() => applyQuotaDelta(n)}
+                          disabled={busy}
+                        >
+                          <Text style={[styles.quickText, { color: colors.ink }]}>{`${formatOmega(n)}`}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <Text style={[styles.hint, { color: colors.muted }]}>
+                      预览：{formatOmega(quotaInput.trim() ? Number(quotaInput.trim()) : undefined)}
+                    </Text>
+
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    <Text style={[styles.sectionTitle, { color: colors.ink }]}>绑定信息（只读）</Text>
+                    {(['email', 'github_id', 'discord_id', 'oidc_id', 'wechat_id', 'telegram_id'] as const).map((k) => (
+                      <View key={k} style={styles.formRow}>
+                        <Text style={[styles.formLabel, { color: colors.muted }]}>{k}</Text>
+                        <View
+                          style={[
+                            styles.formInput,
+                            styles.readOnlyBox,
+                            { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                          ]}
+                        >
+                          <Text selectable style={[styles.readOnlyText, { color: colors.ink }]}>
+                            {safeString(editingDetail?.[k]) || '—'}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
+            </KeyboardAvoidingView>
           </Surface>
         </View>
       </Modal>
@@ -810,128 +929,83 @@ export default function AdminUsersScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F7F8FA' },
+  screen: { flex: 1 },
   list: { flex: 1 },
-  container: { padding: 16, gap: 12 },
+  container: {
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
+  },
   header: { gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  title: { fontSize: 20, fontWeight: '900', color: '#11181C' },
+  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  pageTitleGroup: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  title: { fontSize: 20, fontWeight: '800' },
   actions: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
-  errorText: { color: '#991B1B', fontWeight: '700' },
-  hint: { color: '#667085', fontSize: 12, fontWeight: '600' },
+  hint: { fontSize: 12, fontWeight: '600' },
   searchCard: { gap: 10 },
-  cardTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
-  inlineRow: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  cardTitle: { fontSize: 14, fontWeight: '700' },
+  searchRow: { flexDirection: 'row', gap: 10, alignItems: 'center', flexWrap: 'wrap' },
+  searchActions: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   flex1: { flex: 1 },
+  flexBtn: { flex: 1 },
   input: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#fff',
-    color: '#11181C',
   },
-  actionBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
-    alignSelf: 'flex-start',
-  },
-  actionText: { fontWeight: '800', color: '#11181C' },
-  primaryBtn: { backgroundColor: '#11181C', borderColor: 'transparent' },
-  primaryText: { color: '#fff' },
-  dangerBtn: { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' },
-  dangerText: { color: '#991B1B' },
-  ghostBtn: { backgroundColor: '#667085', borderColor: 'transparent' },
-  secondaryBtn: { backgroundColor: '#EEF2FF', borderColor: 'rgba(0,0,0,0.08)' },
-  pagerInfo: { flex: 1, textAlign: 'center', color: '#667085', fontSize: 12, fontWeight: '700' },
+  pagerInfo: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '700' },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   quickBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#fff',
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
   },
-  quickText: { color: '#11181C', fontWeight: '800', fontSize: 12 },
+  quickText: { fontWeight: '800', fontSize: 12 },
   item: { gap: 10 },
   itemDisabled: { opacity: 0.75 },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   itemTitleWrap: { flex: 1, gap: 4 },
-  itemTitle: { fontSize: 14, fontWeight: '900', color: '#11181C' },
-  dim: { color: '#98A2B3', fontWeight: '800' },
-  remark: { color: '#667085', fontSize: 12, fontWeight: '700' },
+  itemTitle: { fontSize: 14, fontWeight: '700' },
+  dim: { fontWeight: '800' },
+  remark: { fontSize: 12, fontWeight: '700' },
   kvRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  k: { color: '#667085', fontSize: 12, fontWeight: '700' },
-  v: { color: '#11181C', fontSize: 12, fontWeight: '900' },
+  k: { fontSize: 12, fontWeight: '700' },
+  v: { fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
   progressWrap: {
     height: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(17,24,28,0.06)',
+    borderRadius: Radius.pill,
     overflow: 'hidden',
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#11181C',
-    borderRadius: 999,
+    borderRadius: Radius.pill,
   },
   opsRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
-  smallBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.08)',
-    backgroundColor: '#fff',
-  },
-  smallBtnText: { fontWeight: '900', color: '#11181C' },
-  empty: { paddingTop: 16, color: '#667085', textAlign: 'center' },
-  backBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: '#11181C',
-  },
-  backText: { color: '#fff', fontWeight: '900' },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.25)',
     paddingHorizontal: 12,
     justifyContent: 'flex-end',
   },
   modalCard: { maxHeight: '92%', padding: 12, gap: 12 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  modalTitle: { flex: 1, fontSize: 14, fontWeight: '900', color: '#11181C' },
+  modalTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
   modalHeaderActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  modalBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#fff',
-  },
-  modalBtnText: { fontWeight: '900', color: '#11181C' },
+  modalKav: { flex: 1 },
   modalBody: { paddingBottom: 12, gap: 10 },
-  sectionTitle: { fontSize: 13, fontWeight: '900', color: '#11181C' },
+  sectionTitle: { fontSize: 13, fontWeight: '700' },
   formRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  formLabel: { width: 110, color: '#667085', fontSize: 12, fontWeight: '800' },
+  formLabel: { width: 110, fontSize: 12, fontWeight: '800' },
   formInput: { flex: 1 },
   readOnlyBox: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: Radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0,0,0,0.12)',
-    backgroundColor: '#F3F4F6',
   },
-  readOnlyText: { color: '#11181C', fontWeight: '900', fontSize: 12 },
-  divider: { height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(0,0,0,0.08)' },
+  readOnlyText: { fontWeight: '600', fontSize: 12 },
+  divider: { height: StyleSheet.hairlineWidth },
 });

@@ -1,26 +1,34 @@
-import React from 'react';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { BlurView } from 'expo-blur';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type ButtonProps = {
+import { Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
+
+type IconButtonProps = {
   label: string;
   icon: React.ComponentProps<typeof MaterialIcons>['name'];
   onPress: () => void;
   disabled?: boolean;
-  position: { left?: number; right?: number; bottom: number };
 };
 
-function GlassFab({ label, icon, onPress, disabled, position }: ButtonProps) {
+function IconButton({ label, icon, onPress, disabled }: IconButtonProps) {
+  const { colors } = useAppTheme();
   return (
-    <View pointerEvents="box-none" style={[styles.fabWrap, position, disabled ? styles.disabled : null]}>
-      <BlurView intensity={22} tint="light" style={styles.blur} />
-      <View style={styles.border} />
-      <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled} style={styles.btn}>
-        <MaterialIcons name={icon} size={18} color={disabled ? '#98A2B3' : '#11181C'} />
-        <Text style={[styles.text, disabled ? styles.textDisabled : null]}>{label}</Text>
-      </Pressable>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconButton,
+        pressed && !disabled ? { backgroundColor: colors.surfaceMuted, transform: [{ scale: 0.97 }] } : null,
+      ]}>
+      <MaterialIcons name={icon} size={21} color={disabled ? colors.subtle : colors.ink} />
+    </Pressable>
   );
 }
 
@@ -43,72 +51,93 @@ export function FloatingPageControls({
   disabledNext,
   refreshLabel,
 }: FloatingPageControlsProps) {
-  const baseBottom = 12;
-  const prevBottom = baseBottom + 12;
-  const refreshBottom = prevBottom + 56;
-  const nextBottom = baseBottom;
-
+  const { colors, isDark, shadow } = useAppTheme();
+  const insets = useSafeAreaInsets();
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <GlassFab
-        label={refreshLabel ?? '刷新'}
-        icon="refresh"
-        onPress={onRefresh}
-        disabled={disabledRefresh}
-        position={{ left: 16, bottom: refreshBottom }}
-      />
-      <GlassFab
-        label="上一页"
-        icon="chevron-left"
-        onPress={onPrev}
-        disabled={disabledPrev}
-        position={{ left: 16, bottom: prevBottom }}
-      />
-      <GlassFab
-        label="下一页"
-        icon="chevron-right"
-        onPress={onNext}
-        disabled={disabledNext}
-        position={{ right: 16, bottom: nextBottom }}
-      />
+    <View pointerEvents="box-none" style={[styles.anchor, { bottom: insets.bottom + 12 }]}>
+      <View
+        style={[
+          styles.dock,
+          {
+            borderColor: isDark ? 'rgba(62, 84, 77, 0.86)' : 'rgba(184, 198, 194, 0.86)',
+            backgroundColor: isDark ? 'rgba(23, 35, 31, 0.88)' : 'rgba(255, 255, 255, 0.86)',
+          },
+          shadow ?? null,
+        ]}>
+        <BlurView intensity={48} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={refreshLabel ?? '刷新'}
+          disabled={disabledRefresh}
+          onPress={onRefresh}
+          style={({ pressed }) => [
+            styles.refreshButton,
+            pressed && !disabledRefresh
+              ? { backgroundColor: colors.surfaceMuted, transform: [{ scale: 0.97 }] }
+              : null,
+            disabledRefresh ? styles.disabled : null,
+          ]}>
+          <MaterialIcons name="refresh" size={19} color={colors.accent} />
+          <Text style={[styles.refreshText, { color: colors.accent }]}>{refreshLabel ?? '刷新'}</Text>
+        </Pressable>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <View style={styles.pagerGroup}>
+          <IconButton label="上一页" icon="chevron-left" onPress={onPrev} disabled={disabledPrev} />
+          <IconButton label="下一页" icon="chevron-right" onPress={onNext} disabled={disabledNext} />
+        </View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fabWrap: {
+  anchor: {
     position: 'absolute',
-    borderRadius: 999,
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+  },
+  dock: {
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 56,
+    padding: 6,
+    borderRadius: Radius.medium,
+    borderWidth: 1,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.20)',
-  },
-  blur: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  border: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.65)',
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
-  btn: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 999,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
   },
-  text: {
-    color: '#11181C',
-    fontWeight: '900',
+  refreshButton: {
+    minHeight: 42,
+    flex: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: Radius.small,
+  },
+  refreshText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  divider: {
+    width: 1,
+    height: 28,
+  },
+  pagerGroup: {
+    flexDirection: 'row',
+    gap: 4,
+    marginLeft: 4,
+  },
+  iconButton: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.small,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   disabled: {
-    opacity: 0.7,
-  },
-  textDisabled: {
-    color: '#98A2B3',
+    opacity: 0.5,
   },
 });

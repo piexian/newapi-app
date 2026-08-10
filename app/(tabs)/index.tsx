@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useApi } from '@/hooks/use-api';
@@ -11,8 +11,14 @@ import { useSettings } from '@/providers/settings-provider';
 import { Surface } from '@/components/ui/surface';
 import { StatTile } from '@/components/ui/stat-tile';
 import { FloatingRefreshButton } from '@/components/ui/floating-refresh';
+import { InlineNotice } from '@/components/ui/inline-notice';
+import { Layout, Radius } from '@/constants/theme';
+import { useAppTheme } from '@/hooks/use-app-theme';
 
 type ModelAgg = { model: string; quota: number; count: number; tokens: number };
+
+// 顶部首屏安全区偏移（刷新/头部固定 20pt 节奏）
+const HEADER_INSET = 20;
 
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -51,9 +57,11 @@ export default function DashboardScreen() {
   const { userId } = useAuth();
   const { quota } = useStatus();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [user, setUser] = useState<ReturnType<typeof parseUser>>(null);
   const [quotaData, setQuotaData] = useState<ReturnType<typeof parseQuotaData>>([]);
   const [rangeDays, setRangeDays] = useState<1 | 7 | 30>(7);
@@ -163,6 +171,7 @@ export default function DashboardScreen() {
       setEndTimestamp(localEnd);
       setUser(parseUser(userRes.body));
       setQuotaData(parseQuotaData(dataRes.body));
+      setHasLoaded(true);
 
       const firstError = [userRes, dataRes].find((r) => !r.ok);
       if (firstError) setError(`请求失败：HTTP ${firstError.status}`);
@@ -178,182 +187,192 @@ export default function DashboardScreen() {
   }, [refresh]);
 
   return (
-    <View style={styles.screen}>
+    <View style={[styles.screen, { backgroundColor: colors.canvas }]}>
       <ScrollView
         contentContainerStyle={[
           styles.container,
-          { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 120 },
+          { paddingTop: insets.top + HEADER_INSET, paddingBottom: insets.bottom + HEADER_INSET + 8 },
         ]}
         keyboardShouldPersistTaps="handled">
         <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.greet}>
+          <View style={styles.headerCopy}>
+            <Text style={[styles.greet, { color: colors.ink }]}>
               {greetingPrefix()}，{displayName}
             </Text>
-            <Text style={styles.sub}>Base URL：{baseUrl || '未设置'} · UserId：{userId}</Text>
+            <Text style={[styles.sub, { color: colors.muted }]} numberOfLines={1} ellipsizeMode="tail">
+              Base URL：{baseUrl || '未设置'} · UserId：{userId}
+            </Text>
           </View>
+          <FloatingRefreshButton onPress={refresh} disabled={busy} loading={busy} label={busy ? '刷新中' : '刷新'} />
         </View>
 
-        {!!error && (
-          <Surface>
-            <Text style={styles.error}>{error}</Text>
-          </Surface>
-        )}
+        {!!error && <InlineNotice message={error} />}
 
-        <Surface style={styles.rangeCard}>
-          <Text style={styles.sectionTitle}>统计范围</Text>
-          <View style={styles.chipRow}>
-            {([1, 7, 30] as const).map((d) => {
-              const active = rangeDays === d;
-              return (
-                <Pressable
-                  key={d}
-                  style={[styles.chip, active ? styles.chipActive : styles.chipIdle]}
-                  onPress={() => {
-                    setRangeDays(d);
-                    setEndTimestamp(nowSeconds() + 3600);
-                  }}
-                  disabled={busy}>
-                  <Text style={[styles.chipText, active ? styles.chipTextActive : styles.chipTextIdle]}>{d}天</Text>
-                </Pressable>
-              );
-            })}
+        {busy && !hasLoaded ? (
+          <View style={styles.loading}>
+            <ActivityIndicator size="large" color={colors.accent} />
+            <Text style={[styles.loadingText, { color: colors.muted }]}>加载中</Text>
           </View>
-          <Text style={styles.hint}>
-            范围：{formatDateTimeEpochSeconds(startTimestamp)} ~ {formatDateTimeEpochSeconds(endTimestamp)}
-          </Text>
-        </Surface>
-
-        <Text style={styles.groupTitle}>账户数据</Text>
-        <View style={styles.grid}>
-          <View style={styles.tile}>
-            <StatTile
-              title="当前余额"
-              value={formatQuota(currentBalance, quota ?? undefined)}
-              subtitle="账户可用额度"
-              icon="wallet"
-              iconColor="#2563EB"
-            />
-          </View>
-          <View style={styles.tile}>
-            <StatTile
-              title="历史消耗"
-              value={formatQuota(usedQuota, quota ?? undefined)}
-              subtitle="累计消耗"
-              icon="bar-chart"
-              iconColor="#8B5CF6"
-            />
-          </View>
-        </View>
-
-        <Text style={styles.groupTitle}>使用统计</Text>
-        <View style={styles.grid}>
-          <View style={styles.tile}>
-            <StatTile
-              title="请求次数"
-              value={typeof requestCount === 'number' ? String(requestCount) : '—'}
-              subtitle="历史累计"
-              icon="send"
-              iconColor="#10B981"
-            />
-          </View>
-          <View style={styles.tile}>
-            <StatTile
-              title="统计次数"
-              value={String(totals.totalTimes)}
-              subtitle={`${rangeDays}天内`}
-              icon="pulse"
-              iconColor="#06B6D4"
-              sparkline={series.times}
-            />
-          </View>
-        </View>
-
-        <Text style={styles.groupTitle}>资源消耗</Text>
-        <View style={styles.grid}>
-          <View style={styles.tile}>
-            <StatTile
-              title="统计额度"
-              value={formatQuota(totals.totalQuota, quota ?? undefined)}
-              subtitle={`${rangeDays}天内`}
-              icon="logo-bitcoin"
-              iconColor="#F59E0B"
-              sparkline={series.quota}
-            />
-          </View>
-          <View style={styles.tile}>
-            <StatTile
-              title="统计 Tokens"
-              value={Number.isFinite(totals.totalTokens) ? totals.totalTokens.toLocaleString() : '—'}
-              subtitle={`${rangeDays}天内`}
-              icon="flash"
-              iconColor="#EC4899"
-              sparkline={series.tokens}
-            />
-          </View>
-        </View>
-
-        <Text style={styles.groupTitle}>性能指标</Text>
-        <View style={styles.grid}>
-          <View style={styles.tile}>
-            <StatTile
-              title="平均 RPM"
-              value={series.avgRPM}
-              subtitle="每分钟请求数"
-              icon="stopwatch"
-              iconColor="#6366F1"
-              sparkline={series.rpm}
-            />
-          </View>
-          <View style={styles.tile}>
-            <StatTile
-              title="平均 TPM"
-              value={series.avgTPM}
-              subtitle="每分钟 Tokens"
-              icon="text-outline"
-              iconColor="#F97316"
-              sparkline={series.tpm}
-            />
-          </View>
-        </View>
-
-        <Surface style={styles.modelsCard}>
-          <Text style={styles.sectionTitle}>模型消耗分布</Text>
-          {!totals.models.length ? (
-            <Text style={styles.hint}>暂无数据</Text>
-          ) : (
-            totals.models.slice(0, 8).map((m) => (
-              <View key={m.model} style={styles.modelRow}>
-                <Text style={styles.modelName} numberOfLines={1}>
-                  {m.model}
-                </Text>
-                <Text style={styles.modelVal}>{formatQuota(m.quota, quota ?? undefined)}</Text>
+        ) : (
+          <>
+            <Surface style={styles.rangeCard}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>统计范围</Text>
+              <View style={styles.chipRow}>
+                {([1, 7, 30] as const).map((d) => {
+                  const active = rangeDays === d;
+                  return (
+                    <Pressable
+                      key={d}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      disabled={busy}
+                      onPress={() => {
+                        setRangeDays(d);
+                        setEndTimestamp(nowSeconds() + 3600);
+                      }}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        {
+                          backgroundColor: active ? colors.accent : colors.surface,
+                          borderColor: active ? colors.accent : colors.border,
+                        },
+                        pressed ? styles.chipPressed : null,
+                        busy ? styles.chipDisabled : null,
+                      ]}>
+                      <Text style={[styles.chipText, { color: active ? colors.onAccent : colors.ink }]}>{d}天</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-            ))
-          )}
-          {!!totals.models.length && (
-            <Text style={styles.hint}>按额度排序，仅展示前 8 个模型</Text>
-          )}
-        </Surface>
+              <Text style={[styles.hint, { color: colors.muted }]}>
+                范围：{formatDateTimeEpochSeconds(startTimestamp)} ~ {formatDateTimeEpochSeconds(endTimestamp)}
+              </Text>
+            </Surface>
 
-        <Surface style={styles.profileCard}>
-          <Text style={styles.sectionTitle}>账户信息</Text>
-          <View style={styles.kvRow}>
-            <Text style={styles.k}>用户名</Text>
-            <Text style={styles.v}>{user?.username ?? '—'}</Text>
-          </View>
-          <View style={styles.kvRow}>
-            <Text style={styles.k}>邮箱</Text>
-            <Text style={styles.v}>{user?.email ?? '—'}</Text>
-          </View>
-          <View style={styles.kvRow}>
-            <Text style={styles.k}>分组</Text>
-            <Text style={styles.v}>{user?.group ?? '—'}</Text>
-          </View>
-        </Surface>
+            <Text style={[styles.groupTitle, { color: colors.ink }]}>账户数据</Text>
+            <View style={styles.grid}>
+              <View style={styles.tile}>
+                <StatTile
+                  title="当前余额"
+                  value={formatQuota(currentBalance, quota ?? undefined)}
+                  subtitle="账户可用额度"
+                  icon="wallet"
+                />
+              </View>
+              <View style={styles.tile}>
+                <StatTile
+                  title="历史消耗"
+                  value={formatQuota(usedQuota, quota ?? undefined)}
+                  subtitle="累计消耗"
+                  icon="bar-chart"
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.groupTitle, { color: colors.ink }]}>使用统计</Text>
+            <View style={styles.grid}>
+              <View style={styles.tile}>
+                <StatTile
+                  title="请求次数"
+                  value={typeof requestCount === 'number' ? String(requestCount) : '—'}
+                  subtitle="历史累计"
+                  icon="send"
+                />
+              </View>
+              <View style={styles.tile}>
+                <StatTile
+                  title="统计次数"
+                  value={String(totals.totalTimes)}
+                  subtitle={`${rangeDays}天内`}
+                  icon="pulse"
+                  sparkline={series.times}
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.groupTitle, { color: colors.ink }]}>资源消耗</Text>
+            <View style={styles.grid}>
+              <View style={styles.tile}>
+                <StatTile
+                  title="统计额度"
+                  value={formatQuota(totals.totalQuota, quota ?? undefined)}
+                  subtitle={`${rangeDays}天内`}
+                  icon="logo-bitcoin"
+                  sparkline={series.quota}
+                />
+              </View>
+              <View style={styles.tile}>
+                <StatTile
+                  title="统计 Tokens"
+                  value={Number.isFinite(totals.totalTokens) ? totals.totalTokens.toLocaleString() : '—'}
+                  subtitle={`${rangeDays}天内`}
+                  icon="flash"
+                  sparkline={series.tokens}
+                />
+              </View>
+            </View>
+
+            <Text style={[styles.groupTitle, { color: colors.ink }]}>性能指标</Text>
+            <View style={styles.grid}>
+              <View style={styles.tile}>
+                <StatTile
+                  title="平均 RPM"
+                  value={series.avgRPM}
+                  subtitle="每分钟请求数"
+                  icon="stopwatch"
+                  sparkline={series.rpm}
+                />
+              </View>
+              <View style={styles.tile}>
+                <StatTile
+                  title="平均 TPM"
+                  value={series.avgTPM}
+                  subtitle="每分钟 Tokens"
+                  icon="text-outline"
+                  sparkline={series.tpm}
+                />
+              </View>
+            </View>
+
+            <Surface style={styles.modelsCard}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>模型消耗分布</Text>
+              {!totals.models.length ? (
+                <Text style={[styles.hint, { color: colors.muted }]}>暂无数据</Text>
+              ) : (
+                totals.models.slice(0, 8).map((m) => (
+                  <View key={m.model} style={styles.modelRow}>
+                    <Text style={[styles.modelName, { color: colors.ink }]} numberOfLines={1}>
+                      {m.model}
+                    </Text>
+                    <Text style={[styles.modelVal, { color: colors.ink }]}>
+                      {formatQuota(m.quota, quota ?? undefined)}
+                    </Text>
+                  </View>
+                ))
+              )}
+              {!!totals.models.length && (
+                <Text style={[styles.hint, { color: colors.muted }]}>按额度排序，仅展示前 8 个模型</Text>
+              )}
+            </Surface>
+
+            <Surface style={styles.profileCard}>
+              <Text style={[styles.sectionTitle, { color: colors.ink }]}>账户信息</Text>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>用户名</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{user?.username ?? '—'}</Text>
+              </View>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>邮箱</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{user?.email ?? '—'}</Text>
+              </View>
+              <View style={styles.kvRow}>
+                <Text style={[styles.k, { color: colors.muted }]}>分组</Text>
+                <Text style={[styles.v, { color: colors.ink }]}>{user?.group ?? '—'}</Text>
+              </View>
+            </Surface>
+          </>
+        )}
       </ScrollView>
-
-      <FloatingRefreshButton onPress={refresh} disabled={busy} label={busy ? '刷新中…' : '刷新'} />
     </View>
   );
 }
@@ -361,30 +380,43 @@ export default function DashboardScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#F7F8FA',
   },
   container: {
-    padding: 16,
-    gap: 12,
+    flexGrow: 1,
+    width: '100%',
+    maxWidth: Layout.contentMaxWidth,
+    alignSelf: 'center',
+    padding: Layout.pagePadding,
+    gap: Layout.sectionGap,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  headerCopy: {
+    minWidth: 0,
+    flex: 1,
   },
   greet: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#11181C',
   },
   sub: {
     marginTop: 4,
+    minWidth: 0,
     fontSize: 12,
-    color: '#667085',
   },
-  error: {
-    color: '#d11',
+  loading: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 48,
+  },
+  loadingText: {
+    fontSize: 14,
     fontWeight: '600',
   },
   rangeCard: {
@@ -398,37 +430,28 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: Radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  chipIdle: {
-    backgroundColor: '#fff',
-    borderColor: 'rgba(0,0,0,0.12)',
+  chipPressed: {
+    opacity: 0.8,
   },
-  chipActive: {
-    backgroundColor: '#11181C',
-    borderColor: '#11181C',
+  chipDisabled: {
+    opacity: 0.5,
   },
   chipText: {
     fontSize: 12,
-    fontWeight: '900',
-  },
-  chipTextIdle: {
-    color: '#11181C',
-  },
-  chipTextActive: {
-    color: '#fff',
+    fontWeight: '600',
   },
   groupTitle: {
     marginTop: 4,
     fontSize: 14,
-    fontWeight: '900',
-    color: '#11181C',
+    fontWeight: '700',
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    rowGap: 12,
     justifyContent: 'space-between',
   },
   tile: {
@@ -445,22 +468,20 @@ const styles = StyleSheet.create({
   },
   modelName: {
     flex: 1,
-    color: '#11181C',
     fontSize: 13,
     fontWeight: '800',
   },
   modelVal: {
-    color: '#11181C',
     fontSize: 13,
-    fontWeight: '900',
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   profileCard: {
     gap: 10,
   },
   sectionTitle: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#11181C',
+    fontWeight: '700',
   },
   kvRow: {
     flexDirection: 'row',
@@ -468,17 +489,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   k: {
-    color: '#667085',
     fontSize: 13,
     fontWeight: '600',
   },
   v: {
-    color: '#11181C',
     fontSize: 13,
     fontWeight: '700',
   },
   hint: {
-    color: '#667085',
     fontSize: 12,
     fontWeight: '600',
   },
