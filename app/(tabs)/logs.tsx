@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 
 import { Badge } from '@/components/ui/badge';
 import { AppButton } from '@/components/ui/app-button';
@@ -55,6 +57,40 @@ function todayStartSeconds() {
   return Math.floor(d.getTime() / 1000);
 }
 
+// 时间范围预设：选择器选项与对应的时间戳区间（all 表示不限制）
+type TimeRangeKey = 'all' | 'today' | 'yesterday' | '7d' | '30d';
+
+const TIME_RANGE_OPTIONS: { key: TimeRangeKey; label: string }[] = [
+  { key: 'today', label: '今天' },
+  { key: 'yesterday', label: '昨天' },
+  { key: '7d', label: '最近 7 天' },
+  { key: '30d', label: '最近 30 天' },
+  { key: 'all', label: '全部时间' },
+];
+
+const TIME_RANGE_LABELS = TIME_RANGE_OPTIONS.map((o) => o.label);
+
+function timeRangeLabel(key: TimeRangeKey): string {
+  return TIME_RANGE_OPTIONS.find((o) => o.key === key)?.label ?? '今天';
+}
+
+function timeRangeToTimestamps(key: TimeRangeKey): { startTs: string; endTs: string } {
+  const end = nowSeconds();
+  const todayStart = todayStartSeconds();
+  switch (key) {
+    case 'today':
+      return { startTs: String(todayStart), endTs: String(end) };
+    case 'yesterday':
+      return { startTs: String(todayStart - 86400), endTs: String(todayStart) };
+    case '7d':
+      return { startTs: String(end - 7 * 86400), endTs: String(end) };
+    case '30d':
+      return { startTs: String(end - 30 * 86400), endTs: String(end) };
+    default:
+      return { startTs: '', endTs: '' };
+  }
+}
+
 function logTypeLabel(type?: number) {
   switch (type) {
     case 1:
@@ -92,20 +128,38 @@ export default function LogsScreen() {
   const [modelName, setModelName] = useState('');
   const [group, setGroup] = useState('');
   const [groupOptions, setGroupOptions] = useState<string[]>([]);
-  const [startTs, setStartTs] = useState(String(todayStartSeconds()));
-  const [endTs, setEndTs] = useState(String(nowSeconds()));
+  const [timeRange, setTimeRange] = useState<TimeRangeKey>('today');
 
-  // applied*：已提交的筛选条件。文本输入直接改的是上面的 draft（tokenName/modelName/group/startTs/endTs），
-  // 只有点"查询/重置"时才把 draft 提交到 applied，load/effect 依赖 applied，
-  // 从而避免每个字符都触发一次网络请求。
+  // applied*：已提交的筛选条件。文本输入直接改的是上面的 draft（tokenName/modelName），
+  // 点"查询"才提交；类型/分组/时间范围等点击类筛选即时提交（draft 与 applied 同步），
+  // load/effect 依赖 applied，从而避免文本输入每个字符都触发一次网络请求。
   const [applied, setApplied] = useState(() => ({
     logType,
     tokenName,
     modelName,
     group,
-    startTs,
-    endTs,
+    ...timeRangeToTimestamps('today'),
   }));
+
+  // 筛选卡片折叠状态持久化：下次进页面保持用户上次的展开/收起选择
+  const FILTER_COLLAPSED_KEY = '@logs/filterCollapsed';
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(FILTER_COLLAPSED_KEY)
+      .then((v) => {
+        if (v === '1') setFiltersCollapsed(true);
+      })
+      .catch(() => {});
+     
+  }, []);
+  const toggleFiltersCollapsed = useCallback(() => {
+    setFiltersCollapsed((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem(FILTER_COLLAPSED_KEY, next ? '1' : '0').catch(() => {});
+      return next;
+    });
+     
+  }, []);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsLog, setDetailsLog] = useState<(typeof logs)[number] | null>(null);
@@ -183,43 +237,34 @@ export default function LogsScreen() {
     [api, isAdmin, pageSize, queryParams]
   );
 
-  // 提交当前 draft 为 applied 并查询第 1 页
+  // 文本类输入仍走"查询"提交，避免每次击键都发请求
   const applyFilters = useCallback(() => {
-    setApplied({ logType, tokenName, modelName, group, startTs, endTs });
-  }, [logType, tokenName, modelName, group, startTs, endTs]);
+    setApplied((a) => ({ ...a, tokenName, modelName }));
+  }, [tokenName, modelName]);
 
   const resetFilters = useCallback(() => {
-    const next = {
-      logType: 0,
-      tokenName: '',
-      modelName: '',
-      group: '',
-      startTs: String(todayStartSeconds()),
-      endTs: String(nowSeconds()),
-    };
     setLogType(0);
     setTokenName('');
     setModelName('');
     setGroup('');
-    setStartTs(next.startTs);
-    setEndTs(next.endTs);
-    setApplied(next);
+    setTimeRange('today');
+    setApplied({ logType: 0, tokenName: '', modelName: '', group: '', ...timeRangeToTimestamps('today') });
   }, []);
 
-  const applyToday = useCallback(() => {
-    const start = String(todayStartSeconds());
-    const end = String(nowSeconds());
-    setStartTs(start);
-    setEndTs(end);
-    setApplied((a) => ({ ...a, startTs: start, endTs: end }));
+  // 点击类筛选（类型/分组/时间范围）即时提交：draft 与 applied 同步，load 依赖 applied 自动重新查询
+  const applyLogType = useCallback((t: number) => {
+    setLogType(t);
+    setApplied((a) => ({ ...a, logType: t }));
   }, []);
 
-  const applyRange = useCallback((days: number) => {
-    const end = nowSeconds();
-    const start = end - days * 24 * 3600;
-    setStartTs(String(start));
-    setEndTs(String(end));
-    setApplied((a) => ({ ...a, startTs: String(start), endTs: String(end) }));
+  const applyGroup = useCallback((g: string) => {
+    setGroup(g);
+    setApplied((a) => ({ ...a, group: g }));
+  }, []);
+
+  const applyTimeRange = useCallback((key: TimeRangeKey) => {
+    setTimeRange(key);
+    setApplied((a) => ({ ...a, ...timeRangeToTimestamps(key) }));
   }, []);
 
   const maxPage = useMemo(() => {
@@ -436,82 +481,95 @@ export default function LogsScreen() {
             {!!error && <InlineNotice message={error} />}
 
             <Surface style={styles.filterCard}>
-              <Text style={[styles.cardTitle, { color: colors.ink }]}>筛选</Text>
-              <View style={styles.chipRow}>
-                {[0, 2, 1, 5, 3, 4].map((t) => renderChip(logTypeLabel(t), logType === t, () => setLogType(t)))}
-              </View>
-
-              <TextInput
-                value={tokenName}
-                onChangeText={setTokenName}
-                placeholder="令牌名 token_name（可选）"
-                placeholderTextColor={colors.subtle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
-              />
-              <TextInput
-                value={modelName}
-                onChangeText={setModelName}
-                placeholder="模型名 model_name（可选）"
-                placeholderTextColor={colors.subtle}
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
-              />
-              <DropdownSelect
-                title="选择分组"
-                value={group}
-                onChange={setGroup}
-                options={groupOptions}
-                placeholder="分组（可选）"
-                style={styles.input}
-                textStyle={{ color: colors.ink }}
-              />
-
-              <View style={styles.timeRow}>
-                <TextInput
-                  value={startTs}
-                  onChangeText={setStartTs}
-                  placeholder="start_timestamp（秒）"
-                  placeholderTextColor={colors.subtle}
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    styles.timeInput,
-                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
-                  ]}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={filtersCollapsed ? '展开筛选' : '收起筛选'}
+                accessibilityState={{ expanded: !filtersCollapsed }}
+                style={styles.filterHeader}
+                onPress={toggleFiltersCollapsed}
+              >
+                <Text style={[styles.cardTitle, { color: colors.ink }]}>筛选</Text>
+                <MaterialIcons
+                  name={filtersCollapsed ? 'expand-more' : 'expand-less'}
+                  size={20}
+                  color={colors.muted}
                 />
-                <TextInput
-                  value={endTs}
-                  onChangeText={setEndTs}
-                  placeholder="end_timestamp（秒）"
-                  placeholderTextColor={colors.subtle}
-                  keyboardType="numeric"
-                  style={[
-                    styles.input,
-                    styles.timeInput,
-                    { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink },
-                  ]}
-                />
-              </View>
-              <View style={styles.chipRow}>
-                {renderChip('今天', false, applyToday)}
-                {renderChip('7天', false, () => applyRange(7))}
-                {renderChip('30天', false, () => applyRange(30))}
-              </View>
+              </Pressable>
+              {filtersCollapsed ? (
+                <Text numberOfLines={1} style={[styles.collapsedSummary, { color: colors.muted }]}>
+                  {[
+                    applied.logType ? logTypeLabel(applied.logType) : null,
+                    timeRangeLabel(timeRange),
+                    applied.group.trim() ? `分组 ${applied.group.trim()}` : null,
+                    applied.tokenName.trim() ? `令牌 ${applied.tokenName.trim()}` : null,
+                    applied.modelName.trim() ? `模型 ${applied.modelName.trim()}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || '全部'}
+                </Text>
+              ) : (
+                <>
+                  <View style={styles.chipRow}>
+                    {[0, 2, 1, 5, 3, 4].map((t) => renderChip(logTypeLabel(t), logType === t, () => applyLogType(t)))}
+                  </View>
 
-              <View style={styles.inlineRow}>
-                <AppButton label="查询" icon="search" compact loading={busy} onPress={applyFilters} />
-                <AppButton
-                  label="重置"
-                  icon="restart-alt"
-                  variant="secondary"
-                  compact
-                  onPress={resetFilters}
-                  disabled={busy}
-                />
-              </View>
+                  <TextInput
+                    value={tokenName}
+                    onChangeText={setTokenName}
+                    placeholder="令牌名 token_name（可选）"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    onSubmitEditing={applyFilters}
+                    style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
+                  />
+                  <TextInput
+                    value={modelName}
+                    onChangeText={setModelName}
+                    placeholder="模型名 model_name（可选）"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    onSubmitEditing={applyFilters}
+                    style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.ink }]}
+                  />
+                  <DropdownSelect
+                    title="选择分组"
+                    value={group}
+                    onChange={applyGroup}
+                    options={groupOptions}
+                    placeholder="分组（可选）"
+                    style={styles.input}
+                    textStyle={{ color: colors.ink }}
+                  />
+                  <DropdownSelect
+                    title="选择时间范围"
+                    value={timeRangeLabel(timeRange)}
+                    onChange={(label) => {
+                      const found = TIME_RANGE_OPTIONS.find((o) => o.label === label);
+                      if (found) applyTimeRange(found.key);
+                    }}
+                    options={TIME_RANGE_LABELS}
+                    placeholder="时间范围"
+                    style={styles.input}
+                    textStyle={{ color: colors.ink }}
+                  />
+
+                  <View style={styles.inlineRow}>
+                    <AppButton label="查询" icon="search" compact loading={busy} onPress={applyFilters} />
+                    <AppButton
+                      label="重置"
+                      icon="restart-alt"
+                      variant="secondary"
+                      compact
+                      onPress={resetFilters}
+                      disabled={busy}
+                    />
+                  </View>
+                </>
+              )}
             </Surface>
 
             <Surface style={styles.statCard}>
@@ -647,6 +705,15 @@ const styles = StyleSheet.create({
   filterCard: {
     gap: 10,
   },
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  collapsedSummary: {
+    fontSize: 12,
+  },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.medium,
@@ -739,13 +806,6 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  timeRow: {
-    flexDirection: 'column',
-    gap: 10,
-  },
-  timeInput: {
-    width: '100%',
   },
   pagerInfo: {
     textAlign: 'center',
