@@ -17,7 +17,7 @@
     },
     "android": {
       "package": "com.newapi.mobile",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/adaptive-icon.png",

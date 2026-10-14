@@ -32,7 +32,13 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # v3 默认装 "tools platform-tools"，而 tools 包已被 Google 从 SDK 仓库移除，
+          # sdkmanager 报 "Failed to find package 'tools'" 退出 1 直接炸掉 job；v4 会跳过废弃包。
+          # cmdline-tools 锁 16.0（与 v1.2.2 那次成功构建一致），不用 v4 默认的 22.0 引入新变量。
+          cmdline-tools-version: '12266719'
+          packages: 'platform-tools'
 
       - name: Install Android platform / build-tools / NDK
         run: |
