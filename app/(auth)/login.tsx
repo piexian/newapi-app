@@ -19,14 +19,11 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { Layout, Radius } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { isCleartextHttpUrl, isValidServerUrl } from '@/lib/url';
 import { useAuth } from '@/providers/auth-provider';
 import { useSettings } from '@/providers/settings-provider';
 
 type FieldErrors = Partial<Record<'baseUrl' | 'userId' | 'accessToken', string>>;
-
-function validateUrl(value: string) {
-  return /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(value.trim());
-}
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -52,7 +49,7 @@ export default function LoginScreen() {
     const nextToken = accessTokenInput.trim();
 
     if (!nextBaseUrl) nextErrors.baseUrl = '请输入服务器地址';
-    else if (!validateUrl(nextBaseUrl)) nextErrors.baseUrl = '请输入以 http:// 或 https:// 开头的有效地址';
+    else if (!isValidServerUrl(nextBaseUrl)) nextErrors.baseUrl = '请输入以 http:// 或 https:// 开头的有效地址';
     if (!nextUserId) nextErrors.userId = '请输入用户 ID';
     if (!nextToken) nextErrors.accessToken = '请输入系统访问令牌';
 
@@ -127,6 +124,13 @@ export default function LoginScreen() {
                 returnKeyType="next"
                 onSubmitEditing={() => userIdRef.current?.focus()}
               />
+              {!errors.baseUrl && isCleartextHttpUrl(baseUrlInput) && (
+                <InlineNotice
+                  tone="warning"
+                  title="明文 HTTP 连接"
+                  message="访问令牌将在明文 HTTP 中传输，建议仅用于受信内网环境，公网实例请改用 https://。"
+                />
+              )}
             </View>
 
             <View style={[styles.divider, { backgroundColor: colors.border }]} />

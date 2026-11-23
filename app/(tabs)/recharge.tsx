@@ -28,6 +28,7 @@ import { useApi } from '@/hooks/use-api';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseTopupInfo, parseTopupRecords, parseUser } from '@/lib/parsers';
+import { isHttpsUrl, shouldAllowPaymentWebViewUrl } from '@/lib/url';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -40,11 +41,6 @@ function parsePositiveInt(text: string): number | null {
   if (!Number.isFinite(n) || n <= 0) return null;
   if (!Number.isInteger(n)) return null;
   return n;
-}
-
-// 仅允许 http/https，拒绝 javascript:/data: 等可执行协议，防止后端返回或被篡改的恶意地址在 WebView 内执行
-function isSafeHttpUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
 }
 
 export default function RechargeScreen() {
@@ -362,6 +358,10 @@ export default function RechargeScreen() {
                 setError('拉起支付失败：未返回 pay_link');
                 return;
               }
+              if (!isHttpsUrl(link)) {
+                setError('拉起支付失败：支付地址必须使用 HTTPS');
+                return;
+              }
               await WebBrowser.openBrowserAsync(link);
               await load(1);
               return;
@@ -383,8 +383,8 @@ export default function RechargeScreen() {
               setError('拉起支付失败：未返回 url/data');
               return;
             }
-            if (!isSafeHttpUrl(url)) {
-              setError('拉起支付失败：支付地址不合法');
+            if (!isHttpsUrl(url)) {
+              setError('拉起支付失败：支付地址必须使用 HTTPS');
               return;
             }
             setWebPayHtml(buildAutoPostHtml(url, params));
@@ -419,6 +419,10 @@ export default function RechargeScreen() {
           isRecord(env) && isRecord(env.data) && typeof env.data.checkout_url === 'string' ? (env.data.checkout_url as string) : '';
         if (!link) {
           setError('拉起支付失败：未返回 checkout_url');
+          return;
+        }
+        if (!isHttpsUrl(link)) {
+          setError('拉起支付失败：支付地址必须使用 HTTPS');
           return;
         }
         await WebBrowser.openBrowserAsync(link);
@@ -758,10 +762,10 @@ export default function RechargeScreen() {
             </View>
             <View style={styles.webWrap}>
               <WebView
-                originWhitelist={['http://*', 'https://*']}
+                originWhitelist={['*']}
                 onShouldStartLoadWithRequest={(request) => {
-                  // 仅放行 http/https 导航，拦截其他协议（如 tel:/intent:/javascript:）
-                  return isSafeHttpUrl(request.url);
+                  // 统一由回调拦截非 HTTPS 导航，避免 originWhitelist 失配触发 Linking.openURL 跳出应用
+                  return shouldAllowPaymentWebViewUrl(request.url);
                 }}
                 source={{ html: webPayHtml }}
                 startInLoadingState

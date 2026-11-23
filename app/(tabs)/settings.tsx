@@ -18,12 +18,9 @@ import { InlineNotice } from '@/components/ui/inline-notice';
 import { Surface } from '@/components/ui/surface';
 import { Layout, Radius } from '@/constants/theme';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { isCleartextHttpUrl, isValidServerUrl } from '@/lib/url';
 import { useAuth } from '@/providers/auth-provider';
 import { useSettings } from '@/providers/settings-provider';
-
-function isValidUrl(value: string) {
-  return /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(value.trim());
-}
 
 export default function SettingsScreen() {
   const { baseUrl, setBaseUrl, isLoaded: settingsLoaded } = useSettings();
@@ -56,7 +53,7 @@ export default function SettingsScreen() {
 
   async function saveServer() {
     const next = baseUrlInput.trim();
-    if (!isValidUrl(next)) {
+    if (!isValidServerUrl(next)) {
       setUrlError('请输入以 http:// 或 https:// 开头的有效地址');
       return;
     }
@@ -154,6 +151,13 @@ export default function SettingsScreen() {
             returnKeyType="done"
             onSubmitEditing={() => void saveServer()}
           />
+          {!urlError && isCleartextHttpUrl(baseUrlInput) && (
+            <InlineNotice
+              tone="warning"
+              title="明文 HTTP 连接"
+              message="访问令牌将在明文 HTTP 中传输，建议仅用于受信内网环境，公网实例请改用 https://。"
+            />
+          )}
           <View style={styles.actionRow}>
             <AppButton
               label="保存服务器地址"
@@ -222,7 +226,7 @@ export default function SettingsScreen() {
               label="更新访问凭据"
               icon="save"
               loading={busyAction === 'identity'}
-              disabled={!identityChanged}
+              disabled={!identityChanged || busyAction !== null}
               onPress={() => void saveIdentity()}
             />
           </View>
@@ -238,6 +242,7 @@ export default function SettingsScreen() {
             icon="logout"
             variant="danger"
             loading={busyAction === 'logout'}
+            disabled={busyAction !== null}
             onPress={confirmLogout}
           />
         </Surface>

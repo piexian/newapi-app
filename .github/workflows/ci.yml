@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - 'assets/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'hooks/**'
+      - 'lib/**'
+      - 'plugins/**'
+      - 'providers/**'
+      - '__tests__/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'eslint.config.js'
+      - 'jest.config.js'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'app/**'
+      - 'assets/**'
+      - 'components/**'
+      - 'constants/**'
+      - 'hooks/**'
+      - 'lib/**'
+      - 'plugins/**'
+      - 'providers/**'
+      - '__tests__/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'eslint.config.js'
+      - 'jest.config.js'
+      - '.github/workflows/ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Test, Lint, Typecheck & Prebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test -- --watchAll=false
+
+      - name: Lint app and components
+        run: npm run lint
+
+      - name: Lint shared modules, plugins and tests
+        run: npx eslint constants hooks lib providers plugins __tests__ jest.config.js
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Verify Android prebuild
+        run: CI=1 npx expo prebuild --platform android --clean --no-install
