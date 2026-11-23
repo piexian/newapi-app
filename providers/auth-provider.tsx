@@ -26,16 +26,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let canceled = false;
     (async () => {
-      const [userId, accessToken] = await Promise.all([
-        getItem(storageKeys.userId),
-        getAccessToken(),
-      ]);
-      if (canceled) return;
-      setState({
-        userId: (userId ?? '').trim(),
-        accessToken: (accessToken ?? '').trim(),
-      });
-      setIsLoaded(true);
+      try {
+        const [userId, accessToken] = await Promise.all([
+          getItem(storageKeys.userId),
+          getAccessToken(),
+        ]);
+        if (canceled) return;
+        setState({
+          userId: (userId ?? '').trim(),
+          accessToken: (accessToken ?? '').trim(),
+        });
+      } catch (error) {
+        console.warn('恢复访问凭据失败:', error);
+        if (!canceled) {
+          setState({ userId: '', accessToken: '' });
+        }
+      } finally {
+        if (!canceled) {
+          setIsLoaded(true);
+        }
+      }
     })();
     return () => {
       canceled = true;
@@ -43,11 +53,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setCredentials = useCallback(async (next: Partial<AuthState>) => {
-    setState((prev) => ({ ...prev, ...next }));
-    if (typeof next.userId === 'string') await setItem(storageKeys.userId, next.userId.trim());
-    if (typeof next.accessToken === 'string') {
-      await setAccessToken(next.accessToken.trim());
+    const trimmedUserId = typeof next.userId === 'string' ? next.userId.trim() : undefined;
+    const trimmedAccessToken = typeof next.accessToken === 'string' ? next.accessToken.trim() : undefined;
+
+    if (trimmedUserId !== undefined) {
+      await setItem(storageKeys.userId, trimmedUserId);
     }
+    if (trimmedAccessToken !== undefined) {
+      await setAccessToken(trimmedAccessToken);
+    }
+
+    setState((prev) => ({
+      userId: trimmedUserId ?? prev.userId,
+      accessToken: trimmedAccessToken ?? prev.accessToken,
+    }));
   }, []);
 
   const logout = useCallback(async (args?: { baseUrl?: string }) => {

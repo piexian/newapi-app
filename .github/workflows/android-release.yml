@@ -45,7 +45,7 @@ jobs:
           set -euo pipefail
           # sdkmanager 提前退出时 yes 会 Broken pipe，pipefail 下会误判失败，故 || true
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
           # NDK 版本与本地验证过的成功构建保持一致
           sdkmanager "ndk;27.1.12297006" "cmake;3.22.1"
 
@@ -95,7 +95,7 @@ jobs:
           set -euo pipefail
           for apk in android/app/build/outputs/apk/release/*.apk; do
             echo "== $apk =="
-            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | grep -E "certificate SHA-256|Signer"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" | grep -E "certificate SHA-256|Signer"
           done
 
       - name: Collect APKs

@@ -7,8 +7,8 @@ import { useAppTheme } from '@/hooks/use-app-theme';
 type InlineNoticeProps = {
   message: string;
   title?: string;
-  /** 语义类型：danger（默认）或 success */
-  tone?: Extract<ToneName, 'danger' | 'success'>;
+  /** 语义类型：danger（默认）、warning 或 success */
+  tone?: Extract<ToneName, 'danger' | 'warning' | 'success'>;
 };
 
 function readableMessage(message: string) {
@@ -18,21 +18,27 @@ function readableMessage(message: string) {
   return message;
 }
 
+const TONE_META = {
+  danger: { icon: 'error-outline', title: '请求失败' },
+  warning: { icon: 'warning-amber', title: '安全提示' },
+  success: { icon: 'check-circle-outline', title: '已完成' },
+} as const;
+
 export function InlineNotice({ message, title, tone = 'danger' }: InlineNoticeProps) {
   const { tones } = useAppTheme();
   const t = tones[tone];
-  const isDanger = tone === 'danger';
+  const meta = TONE_META[tone];
   return (
     <View
       accessibilityRole="alert"
       style={[styles.notice, { backgroundColor: t.bg, borderColor: `${t.fg}4D` }]}>
       <MaterialIcons
-        name={isDanger ? 'error-outline' : 'check-circle-outline'}
+        name={meta.icon}
         size={20}
         color={t.fg}
       />
       <View style={styles.copy}>
-        <Text style={[styles.title, { color: t.fg }]}>{title ?? (isDanger ? '请求失败' : '已完成')}</Text>
+        <Text style={[styles.title, { color: t.fg }]}>{title ?? meta.title}</Text>
         <Text style={[styles.message, { color: `${t.fg}D9` }]}>{readableMessage(message)}</Text>
       </View>
     </View>

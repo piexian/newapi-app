@@ -12,3 +12,18 @@ export function joinUrl(baseUrl: string, path: string): string {
   return `${base}/${path}`;
 }
 
+export function isValidServerUrl(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function isCleartextHttpUrl(input: string): boolean {
+  if (!isValidServerUrl(input)) return false;
+  return new URL(input.trim()).protocol === 'http:';
+}
