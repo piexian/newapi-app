@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - 'app/**'
+      - 'assets/**'
       - 'components/**'
       - 'constants/**'
       - 'hooks/**'
@@ -25,6 +26,7 @@ on:
       - master
     paths:
       - 'app/**'
+      - 'assets/**'
       - 'components/**'
       - 'constants/**'
       - 'hooks/**'

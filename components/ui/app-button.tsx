@@ -70,16 +70,19 @@ export function AppButton({
       accessibilityLabel={label}
       disabled={isDisabled}
       onPress={handlePress}
-      style={({ pressed, hovered }) => [
-        styles.button,
-        variantStyle,
-        compact ? styles.compact : null,
-        fullWidth ? styles.fullWidth : null,
-        hovered && !isDisabled ? styles.hovered : null,
-        pressed && !isDisabled ? styles.pressed : null,
-        isDisabled ? styles.disabled : null,
-        style,
-      ]}
+      style={(pressState) => {
+        const hovered = 'hovered' in pressState && Boolean(pressState.hovered);
+        return [
+          styles.button,
+          variantStyle,
+          compact ? styles.compact : null,
+          fullWidth ? styles.fullWidth : null,
+          hovered && !isDisabled ? styles.hovered : null,
+          pressState.pressed && !isDisabled ? styles.pressed : null,
+          isDisabled ? styles.disabled : null,
+          style,
+        ];
+      }}
       {...props}>
       {loading ? (
         <ActivityIndicator size="small" color={foreground} />

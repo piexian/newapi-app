@@ -35,6 +35,12 @@ export function isHttpsUrl(input: string): boolean {
   }
 }
 
+export function shouldAllowPaymentWebViewUrl(input: string): boolean {
+  const trimmed = input.trim();
+  if (trimmed === 'about:blank') return true;
+  return isHttpsUrl(trimmed);
+}
+
 export function isCleartextHttpUrl(input: string): boolean {
   if (!isValidServerUrl(input)) return false;
   return new URL(input.trim()).protocol === 'http:';

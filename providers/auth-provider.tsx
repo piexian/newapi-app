@@ -123,18 +123,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ++authOpSeqRef.current;
       setState({ userId: '', accessToken: '' });
 
-      try {
-        if (args?.baseUrl) {
-          const url = joinUrl(args.baseUrl, '/api/user/logout');
-          await fetch(url, { method: 'POST', credentials: 'include' });
-        }
-      } catch {
-        // ignore
-      }
-
-      await enqueueStorageOp(async () => {
+      // 立即把本地清理排入串行队列，避免等待远端登出响应期间重新登录后被旧退出操作误删。
+      const clearLocalPromise = enqueueStorageOp(async () => {
         await Promise.all([removeItem(storageKeys.userId), removeAccessToken()]);
       });
+
+      const remoteLogoutPromise = (async () => {
+        if (!args?.baseUrl) return;
+        try {
+          const url = joinUrl(args.baseUrl, '/api/user/logout');
+          await fetch(url, { method: 'POST', credentials: 'include' });
+        } catch {
+          // ignore
+        }
+      })();
+
+      await Promise.all([clearLocalPromise, remoteLogoutPromise]);
     },
     [enqueueStorageOp]
   );

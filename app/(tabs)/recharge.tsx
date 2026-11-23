@@ -28,7 +28,7 @@ import { useApi } from '@/hooks/use-api';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { formatDateTimeEpochSeconds, formatOmega } from '@/lib/format';
 import { parseTopupInfo, parseTopupRecords, parseUser } from '@/lib/parsers';
-import { isHttpsUrl } from '@/lib/url';
+import { isHttpsUrl, shouldAllowPaymentWebViewUrl } from '@/lib/url';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -762,10 +762,10 @@ export default function RechargeScreen() {
             </View>
             <View style={styles.webWrap}>
               <WebView
-                originWhitelist={['https://*']}
+                originWhitelist={['*']}
                 onShouldStartLoadWithRequest={(request) => {
-                  // 支付流程仅放行 HTTPS 导航，防止明文 HTTP 或其他协议拦截支付参数
-                  return isHttpsUrl(request.url);
+                  // 统一由回调拦截非 HTTPS 导航，避免 originWhitelist 失配触发 Linking.openURL 跳出应用
+                  return shouldAllowPaymentWebViewUrl(request.url);
                 }}
                 source={{ html: webPayHtml }}
                 startInLoadingState

@@ -78,6 +78,17 @@ android {
       expect(migrated).toContain('splits {');
       expect(migrated).toContain('androidComponents {');
       expect(migrated).toContain('onVariants(selector().all())');
+
+      const openBraces = (migrated.match(/\{/g) || []).length;
+      const closeBraces = (migrated.match(/\}/g) || []).length;
+      expect(openBraces).toBe(closeBraces);
+
+      const androidBlockMatch = migrated.match(/android\s*\{([\s\S]*?)\n\}\n\n\/\/ --- \[withAbiSplits:versionCode\]/);
+      expect(androidBlockMatch).not.toBeNull();
+      const androidBody = androidBlockMatch[1];
+      expect(androidBody).toContain('compileSdk 36');
+      expect((androidBody.match(/\{/g) || []).length).toBe((androidBody.match(/\}/g) || []).length);
+
       expect(withAbiSplits.applyAbiSplitsToBuildGradle(migrated)).toBe(migrated);
     });
 

@@ -21,10 +21,6 @@ const SPLITS_INJECT = `
     }
 `;
 
-// 匹配旧版插件在 android {} 内注入的 applicationVariants 回调块，用于增量 prebuild 迁移清理。
-const LEGACY_VARIANT_BLOCK_PATTERN =
-  /\n?(?:[ \t]*\/\/[^\n]*\n)*[ \t]*def\s+abiVersionCodes\s*=\s*\[[^\]]+\]\s*\n[ \t]*applicationVariants\.all\s*\{\s*variant\s*->[\s\S]*?output\.versionCodeOverride[\s\S]*?\n[ \t]*\}\s*\n?/;
-
 const VARIANT_VERSION_INJECT = `
 // --- [withAbiSplits:versionCode] 为每个 ABI 分包分配独立 versionCode（base * 10 + ABI 偏移） ---
 androidComponents {
@@ -44,11 +40,52 @@ androidComponents {
 }
 `;
 
-function applyAbiSplitsToBuildGradle(contents) {
-  let next = contents;
+// 按花括号嵌套深度定位并移除旧版插件注入的 applicationVariants.all 回调块，避免破坏外层 android {} 语法。
+function removeLegacyApplicationVariantsBlock(contents) {
+  const headerPattern =
+    /(?:[ \t]*\/\/[^\n]*\n)*[ \t]*def\s+abiVersionCodes\s*=\s*\[[^\]]+\]\s*\n[ \t]*applicationVariants\.all\s*\{/g;
+  const match = headerPattern.exec(contents);
+  if (!match) return contents;
 
-  // 增量 prebuild 复用旧 android/ 目录时，先移除旧版 applicationVariants.all 回调。
-  next = next.replace(LEGACY_VARIANT_BLOCK_PATTERN, '\n');
+  const blockStart = match.index;
+  const openBraceIndex = match.index + match[0].length - 1;
+  let depth = 0;
+  let closeBraceIndex = -1;
+
+  for (let i = openBraceIndex; i < contents.length; i += 1) {
+    const ch = contents[i];
+    if (ch === '{') {
+      depth += 1;
+    } else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        closeBraceIndex = i;
+        break;
+      }
+    }
+  }
+
+  if (closeBraceIndex === -1) return contents;
+
+  const matchedBlock = contents.slice(blockStart, closeBraceIndex + 1);
+  if (!matchedBlock.includes('versionCodeOverride')) return contents;
+
+  let removeStart = blockStart;
+  while (removeStart > 0 && contents[removeStart - 1] === '\n') {
+    removeStart -= 1;
+  }
+  let removeEnd = closeBraceIndex + 1;
+  if (contents[removeEnd] === '\n') {
+    removeEnd += 1;
+  }
+
+  const before = contents.slice(0, removeStart);
+  const after = contents.slice(removeEnd);
+  return `${before}${before && after ? '\n' : ''}${after}`;
+}
+
+function applyAbiSplitsToBuildGradle(contents) {
+  let next = removeLegacyApplicationVariantsBlock(contents);
 
   if (!next.includes('[withAbiSplits]')) {
     const anchor = /android\s*\{/;
@@ -77,5 +114,6 @@ function withAbiSplits(config) {
 
 withAbiSplits.ABIS = ABIS;
 withAbiSplits.applyAbiSplitsToBuildGradle = applyAbiSplitsToBuildGradle;
+withAbiSplits.removeLegacyApplicationVariantsBlock = removeLegacyApplicationVariantsBlock;
 
 module.exports = withAbiSplits;

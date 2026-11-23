@@ -157,6 +157,55 @@ describe('providers/auth-provider', () => {
     mounted.unmount();
   });
 
+  it('does not let a slow remote logout request delete credentials saved by a subsequent sign-in', async () => {
+    mockPlainMap.set('auth.userId', '1001');
+    mockSecureToken = 'token-A';
+
+    const originalFetch = global.fetch;
+    let releaseLogoutFetch!: () => void;
+    global.fetch = jest.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseLogoutFetch = () => resolve({ ok: true, status: 200 } as Response);
+        })
+    ) as unknown as typeof fetch;
+
+    const firstMount = mountAuth();
+    await flushPromises();
+
+    let logoutPromise!: Promise<void>;
+    act(() => {
+      logoutPromise = firstMount.current.logout({ baseUrl: 'https://api.example.com' });
+    });
+
+    // 远端登出请求仍在等待，用户立即登录账号 B
+    await act(async () => {
+      await firstMount.current.setCredentials({ userId: '2002', accessToken: 'token-B' });
+    });
+
+    await act(async () => {
+      releaseLogoutFetch();
+      await logoutPromise;
+    });
+
+    expect(firstMount.current.isSignedIn).toBe(true);
+    expect(firstMount.current.userId).toBe('2002');
+    expect(firstMount.current.accessToken).toBe('token-B');
+    expect(mockPlainMap.get('auth.userId')).toBe('2002');
+    expect(mockSecureToken).toBe('token-B');
+    firstMount.unmount();
+
+    // 重新挂载后仍应恢复账号 B 的凭据
+    const secondMount = mountAuth();
+    await flushPromises();
+    expect(secondMount.current.isSignedIn).toBe(true);
+    expect(secondMount.current.userId).toBe('2002');
+    expect(secondMount.current.accessToken).toBe('token-B');
+    secondMount.unmount();
+
+    global.fetch = originalFetch;
+  });
+
   it('finishes boot loading cleanly even if SecureStore throws during initial restore', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     mockGetAccessTokenImpl = async () => {
