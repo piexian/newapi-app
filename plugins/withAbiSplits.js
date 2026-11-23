@@ -1,6 +1,6 @@
 // Expo config plugin：在 prebuild 时向 android/app/build.gradle 注入 ABI 拆分配置。
 // 使用 AGP 8/9 公共 androidComponents.onVariants API 覆写分包 versionCode，
-// 替代已在 AGP 9 中移除的 applicationVariants 旧 API。
+// 替代已在 AGP 9 中移除的 applicationVariants 旧 API，并兼容从旧插件输出增量迁移。
 
 const { withAppBuildGradle } = require('@expo/config-plugins');
 
@@ -20,6 +20,10 @@ const SPLITS_INJECT = `
         }
     }
 `;
+
+// 匹配旧版插件在 android {} 内注入的 applicationVariants 回调块，用于增量 prebuild 迁移清理。
+const LEGACY_VARIANT_BLOCK_PATTERN =
+  /\n?(?:[ \t]*\/\/[^\n]*\n)*[ \t]*def\s+abiVersionCodes\s*=\s*\[[^\]]+\]\s*\n[ \t]*applicationVariants\.all\s*\{\s*variant\s*->[\s\S]*?output\.versionCodeOverride[\s\S]*?\n[ \t]*\}\s*\n?/;
 
 const VARIANT_VERSION_INJECT = `
 // --- [withAbiSplits:versionCode] 为每个 ABI 分包分配独立 versionCode（base * 10 + ABI 偏移） ---
@@ -42,6 +46,10 @@ androidComponents {
 
 function applyAbiSplitsToBuildGradle(contents) {
   let next = contents;
+
+  // 增量 prebuild 复用旧 android/ 目录时，先移除旧版 applicationVariants.all 回调。
+  next = next.replace(LEGACY_VARIANT_BLOCK_PATTERN, '\n');
+
   if (!next.includes('[withAbiSplits]')) {
     const anchor = /android\s*\{/;
     if (!anchor.test(next)) {

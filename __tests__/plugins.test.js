@@ -42,6 +42,45 @@ describe('Android Expo config plugins', () => {
       expect(twice).toBe(once);
     });
 
+    it('migrates legacy applicationVariants output cleanly during incremental prebuild', () => {
+      const legacyGradle = `
+apply plugin: "com.android.application"
+
+android {
+    // --- [withAbiSplits] ABI 拆分：一次构建产出多个架构独立 APK ---
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            universalApk false
+        }
+    }
+
+    // 拆分后每个 ABI 需独立 versionCode（base * 10 + ABI 偏移），避免版本冲突。
+    // 用 def 局部变量而非 ext：applicationVariants 闭包内 ext 解析不到 android{} 里挂的属性。
+    def abiVersionCodes = ['armeabi-v7a': 1, 'arm64-v8a': 2, 'x86': 3, 'x86_64': 4]
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            def abiFilter = output.getFilter("ABI")
+            if (abiFilter != null) {
+                output.versionCodeOverride = defaultConfig.versionCode * 10 + abiVersionCodes[abiFilter]
+            }
+        }
+    }
+
+    compileSdk 36
+}
+`;
+      const migrated = withAbiSplits.applyAbiSplitsToBuildGradle(legacyGradle);
+      expect(migrated).not.toContain('applicationVariants.all');
+      expect(migrated).not.toContain('versionCodeOverride');
+      expect(migrated).toContain('splits {');
+      expect(migrated).toContain('androidComponents {');
+      expect(migrated).toContain('onVariants(selector().all())');
+      expect(withAbiSplits.applyAbiSplitsToBuildGradle(migrated)).toBe(migrated);
+    });
+
     it('throws when android block is missing', () => {
       expect(() => withAbiSplits.applyAbiSplitsToBuildGradle('dependencies {}')).toThrow(
         /android \{ \} block not found/

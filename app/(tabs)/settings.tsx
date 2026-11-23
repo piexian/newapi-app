@@ -226,7 +226,7 @@ export default function SettingsScreen() {
               label="更新访问凭据"
               icon="save"
               loading={busyAction === 'identity'}
-              disabled={!identityChanged}
+              disabled={!identityChanged || busyAction !== null}
               onPress={() => void saveIdentity()}
             />
           </View>
@@ -242,6 +242,7 @@ export default function SettingsScreen() {
             icon="logout"
             variant="danger"
             loading={busyAction === 'logout'}
+            disabled={busyAction !== null}
             onPress={confirmLogout}
           />
         </Surface>

@@ -17,7 +17,19 @@ export function isValidServerUrl(input: string): boolean {
   if (!trimmed || /\s/.test(trimmed)) return false;
   try {
     const parsed = new URL(trimmed);
-    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname.length > 0;
+    const validScheme = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    return validScheme && parsed.hostname.length > 0 && parsed.search === '' && parsed.hash === '';
+  } catch {
+    return false;
+  }
+}
+
+export function isHttpsUrl(input: string): boolean {
+  const trimmed = input.trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' && parsed.hostname.length > 0;
   } catch {
     return false;
   }
